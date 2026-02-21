@@ -65,6 +65,8 @@ function main() {
 | For loops | `for i := 0; i < 10; i++` | C-style for loops |
 | For-range | `for i, v := range arr` | Iterate collections |
 | While loops | `while x > 0 { }` | Condition-based loops |
+| Break | `break;` | Exit loop early |
+| Continue | `continue;` | Skip to next iteration |
 | If/else | `if x > 0 { } else { }` | Conditionals |
 | Defer | `defer free(ptr);` | LIFO cleanup at function exit |
 | Alloc/Free | `alloc(Type)` / `free(ptr)` | Manual memory management |
@@ -178,6 +180,7 @@ The `tutorials/` directory contains a complete guide to building the compiler:
 | `arrays.hl` | Arrays and slices |
 | `defer.hl` | Defer statement |
 | `forrange.hl` | For-range loops |
+| `loops.hl` | Break and continue |
 | `demo.hl` | Full feature demonstration |
 
 ## Requirements
