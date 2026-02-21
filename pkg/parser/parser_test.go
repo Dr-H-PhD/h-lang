@@ -748,6 +748,42 @@ func TestForRangeStatement(t *testing.T) {
 	}
 }
 
+func TestBreakStatement(t *testing.T) {
+	input := `break;`
+
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+
+	_, ok := program.Statements[0].(*ast.BreakStatement)
+	if !ok {
+		t.Fatalf("expected BreakStatement, got %T", program.Statements[0])
+	}
+}
+
+func TestContinueStatement(t *testing.T) {
+	input := `continue;`
+
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+
+	_, ok := program.Statements[0].(*ast.ContinueStatement)
+	if !ok {
+		t.Fatalf("expected ContinueStatement, got %T", program.Statements[0])
+	}
+}
+
 func checkParserErrors(t *testing.T, p *Parser) {
 	errors := p.Errors()
 	if len(errors) == 0 {

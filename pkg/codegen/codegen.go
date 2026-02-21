@@ -255,6 +255,10 @@ func (g *Generator) generateStatement(stmt ast.Statement) {
 		g.generateFreeStatement(s)
 	case *ast.DeferStatement:
 		g.generateDeferStatement(s)
+	case *ast.BreakStatement:
+		g.writeLine("break;")
+	case *ast.ContinueStatement:
+		g.writeLine("continue;")
 	case *ast.ExpressionStatement:
 		g.writeLine(g.generateExpression(s.Expression) + ";")
 	}

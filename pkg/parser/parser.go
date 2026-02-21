@@ -229,6 +229,10 @@ func (p *Parser) parseStatement() ast.Statement {
 		return p.parseFreeStatement()
 	case lexer.DEFER:
 		return p.parseDeferStatement()
+	case lexer.BREAK:
+		return p.parseBreakStatement()
+	case lexer.CONTINUE:
+		return p.parseContinueStatement()
 	case lexer.IDENT:
 		if p.peekTokenIs(lexer.WALRUS) {
 			return p.parseInferStatement()
@@ -742,6 +746,26 @@ func (p *Parser) parseDeferStatement() *ast.DeferStatement {
 
 	// Parse the deferred statement
 	stmt.Statement = p.parseStatement()
+
+	return stmt
+}
+
+func (p *Parser) parseBreakStatement() *ast.BreakStatement {
+	stmt := &ast.BreakStatement{Token: p.curToken}
+
+	if p.peekTokenIs(lexer.SEMICOLON) {
+		p.nextToken()
+	}
+
+	return stmt
+}
+
+func (p *Parser) parseContinueStatement() *ast.ContinueStatement {
+	stmt := &ast.ContinueStatement{Token: p.curToken}
+
+	if p.peekTokenIs(lexer.SEMICOLON) {
+		p.nextToken()
+	}
 
 	return stmt
 }

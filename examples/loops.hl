@@ -1,0 +1,75 @@
+# loops.hl - Break and continue demonstration
+
+function main() {
+    # Break: exit loop early
+    print(0);  # Separator
+    for i := 0; i < 10; i++ {
+        if i == 5 {
+            break;
+        }
+        print(i);  # 0, 1, 2, 3, 4
+    }
+
+    # Continue: skip iteration
+    print(0);  # Separator
+    for i := 0; i < 10; i++ {
+        if i % 2 == 0 {
+            continue;
+        }
+        print(i);  # 1, 3, 5, 7, 9
+    }
+
+    # Break in while loop
+    print(0);  # Separator
+    n := 0;
+    while true {
+        print(n);
+        n++;
+        if n >= 5 {
+            break;
+        }
+    }
+
+    # Continue in while loop
+    print(0);  # Separator
+    count := 0;
+    iterations := 0;
+    while iterations < 10 {
+        iterations++;
+        if iterations % 3 == 0 {
+            continue;
+        }
+        count++;
+    }
+    print(count);  # 7 (skipped 3, 6, 9)
+
+    # Nested loops with break
+    print(0);  # Separator
+    for i := 0; i < 3; i++ {
+        for j := 0; j < 3; j++ {
+            if j == 1 {
+                break;  # Only breaks inner loop
+            }
+            print(i * 10 + j);  # 0, 10, 20
+        }
+    }
+
+    # Break in for-range
+    print(0);  # Separator
+    nums := [5]int{10, 20, 30, 40, 50};
+    for _, v := range nums {
+        if v == 30 {
+            break;
+        }
+        print(v);  # 10, 20
+    }
+
+    # Continue in for-range
+    print(0);  # Separator
+    for _, v := range nums {
+        if v == 30 {
+            continue;
+        }
+        print(v);  # 10, 20, 40, 50
+    }
+}

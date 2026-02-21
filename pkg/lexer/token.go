@@ -81,6 +81,8 @@ const (
 	LEN
 	MAKE
 	RANGE
+	BREAK
+	CONTINUE
 
 	// Types
 	TYPE_INT
@@ -153,6 +155,8 @@ var tokenNames = map[TokenType]string{
 	LEN:          "len",
 	MAKE:         "make",
 	RANGE:        "range",
+	BREAK:        "break",
+	CONTINUE:     "continue",
 	TYPE_INT:     "int",
 	TYPE_FLOAT:   "float",
 	TYPE_STRING:  "string",
@@ -188,6 +192,8 @@ var keywords = map[string]TokenType{
 	"len":      LEN,
 	"make":     MAKE,
 	"range":    RANGE,
+	"break":    BREAK,
+	"continue": CONTINUE,
 	"int":      TYPE_INT,
 	"float":    TYPE_FLOAT,
 	"string":   TYPE_STRING,

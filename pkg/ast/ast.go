@@ -578,6 +578,24 @@ func (ds *DeferStatement) String() string {
 	return "defer " + ds.Statement.String()
 }
 
+// BreakStatement: break;
+type BreakStatement struct {
+	Token lexer.Token
+}
+
+func (bs *BreakStatement) statementNode()       {}
+func (bs *BreakStatement) TokenLiteral() string { return bs.Token.Literal }
+func (bs *BreakStatement) String() string       { return "break;" }
+
+// ContinueStatement: continue;
+type ContinueStatement struct {
+	Token lexer.Token
+}
+
+func (cs *ContinueStatement) statementNode()       {}
+func (cs *ContinueStatement) TokenLiteral() string { return cs.Token.Literal }
+func (cs *ContinueStatement) String() string       { return "continue;" }
+
 // ArrayLiteral: [1, 2, 3] or [5]int{1, 2, 3, 4, 5}
 type ArrayLiteral struct {
 	Token    lexer.Token
