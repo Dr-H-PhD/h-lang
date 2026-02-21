@@ -88,8 +88,10 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerPrefix(lexer.AMPERSAND, p.parsePrefixExpression)
 	p.registerPrefix(lexer.ASTERISK, p.parsePrefixExpression)
 	p.registerPrefix(lexer.LPAREN, p.parseGroupedOrCast)
-	p.registerPrefix(lexer.LBRACKET, p.parseArrayLiteral)
+	p.registerPrefix(lexer.LBRACKET, p.parseArrayOrSliceLiteral)
 	p.registerPrefix(lexer.ALLOC, p.parseAllocExpression)
+	p.registerPrefix(lexer.LEN, p.parseLenExpression)
+	p.registerPrefix(lexer.MAKE, p.parseMakeExpression)
 
 	p.infixParseFns = make(map[lexer.TokenType]infixParseFn)
 	p.registerInfix(lexer.PLUS, p.parseInfixExpression)
@@ -839,10 +841,144 @@ func (p *Parser) parseMemberExpression(left ast.Expression) ast.Expression {
 	return exp
 }
 
-func (p *Parser) parseArrayLiteral() ast.Expression {
+func (p *Parser) parseArrayOrSliceLiteral() ast.Expression {
 	array := &ast.ArrayLiteral{Token: p.curToken}
-	array.Elements = p.parseExpressionList(lexer.RBRACKET)
+
+	// Check if this is a typed array: [5]int{...} or []int{...}
+	p.nextToken() // move past [
+
+	if p.curTokenIs(lexer.RBRACKET) {
+		// Slice type: []type{...}
+		p.nextToken() // move past ]
+		if p.curTokenIs(lexer.IDENT) || p.isType() {
+			array.Type = &ast.TypeAnnotation{
+				Token:    p.curToken,
+				Name:     p.curToken.Literal,
+				ArrayLen: -1, // slice
+			}
+			p.nextToken() // move past type
+			if p.curTokenIs(lexer.LBRACE) {
+				array.Elements = p.parseExpressionListBrace()
+			}
+			return array
+		}
+		// Just empty brackets - this is an error or empty slice
+		return array
+	} else if p.curTokenIs(lexer.INT) {
+		// Fixed array: [5]type{...}
+		length, _ := strconv.Atoi(p.curToken.Literal)
+		p.nextToken() // move past number
+		if !p.curTokenIs(lexer.RBRACKET) {
+			return nil
+		}
+		p.nextToken() // move past ]
+		if p.curTokenIs(lexer.IDENT) || p.isType() {
+			array.Type = &ast.TypeAnnotation{
+				Token:    p.curToken,
+				Name:     p.curToken.Literal,
+				ArrayLen: length,
+			}
+			p.nextToken() // move past type
+			if p.curTokenIs(lexer.LBRACE) {
+				array.Elements = p.parseExpressionListBrace()
+			}
+			return array
+		}
+		return nil
+	}
+
+	// Regular array literal without type: [1, 2, 3]
+	// We already moved past [, so parse elements until ]
+	if p.curTokenIs(lexer.RBRACKET) {
+		return array
+	}
+
+	array.Elements = append(array.Elements, p.parseExpression(LOWEST))
+
+	for p.peekTokenIs(lexer.COMMA) {
+		p.nextToken() // comma
+		p.nextToken() // next element
+		array.Elements = append(array.Elements, p.parseExpression(LOWEST))
+	}
+
+	if !p.expectPeek(lexer.RBRACKET) {
+		return nil
+	}
+
 	return array
+}
+
+func (p *Parser) parseExpressionListBrace() []ast.Expression {
+	list := []ast.Expression{}
+
+	if !p.curTokenIs(lexer.LBRACE) {
+		return list
+	}
+
+	if p.peekTokenIs(lexer.RBRACE) {
+		p.nextToken()
+		return list
+	}
+
+	p.nextToken()
+	list = append(list, p.parseExpression(LOWEST))
+
+	for p.peekTokenIs(lexer.COMMA) {
+		p.nextToken()
+		p.nextToken()
+		list = append(list, p.parseExpression(LOWEST))
+	}
+
+	if !p.expectPeek(lexer.RBRACE) {
+		return nil
+	}
+
+	return list
+}
+
+func (p *Parser) parseLenExpression() ast.Expression {
+	exp := &ast.CallExpression{
+		Token:    p.curToken,
+		Function: &ast.Identifier{Token: p.curToken, Value: "len"},
+	}
+
+	if !p.expectPeek(lexer.LPAREN) {
+		return nil
+	}
+	exp.Arguments = p.parseExpressionList(lexer.RPAREN)
+
+	return exp
+}
+
+func (p *Parser) parseMakeExpression() ast.Expression {
+	exp := &ast.MakeExpression{Token: p.curToken}
+
+	if !p.expectPeek(lexer.LPAREN) {
+		return nil
+	}
+	p.nextToken()
+
+	// Parse type
+	exp.Type = p.parseTypeAnnotation()
+
+	// Optional capacity
+	if p.peekTokenIs(lexer.COMMA) {
+		p.nextToken() // comma
+		p.nextToken()
+		exp.Length = p.parseExpression(LOWEST)
+
+		if p.peekTokenIs(lexer.COMMA) {
+			p.nextToken() // comma
+			p.nextToken()
+			exp.Capacity = p.parseExpression(LOWEST)
+		}
+	}
+
+	if !p.expectPeek(lexer.RPAREN) {
+		return nil
+	}
+
+	return exp
 }
 
 func (p *Parser) parseAllocExpression() ast.Expression {

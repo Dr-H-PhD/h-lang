@@ -492,6 +492,130 @@ func TestPointerTypes(t *testing.T) {
 	}
 }
 
+func TestFixedArrayLiteral(t *testing.T) {
+	input := `arr := [5]int{1, 2, 3, 4, 5};`
+
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	stmt := program.Statements[0].(*ast.InferStatement)
+	arr, ok := stmt.Value.(*ast.ArrayLiteral)
+	if !ok {
+		t.Fatalf("expected ArrayLiteral, got %T", stmt.Value)
+	}
+
+	if arr.Type == nil {
+		t.Fatal("expected array type")
+	}
+
+	if arr.Type.ArrayLen != 5 {
+		t.Errorf("expected ArrayLen 5, got %d", arr.Type.ArrayLen)
+	}
+
+	if arr.Type.Name != "int" {
+		t.Errorf("expected type 'int', got %q", arr.Type.Name)
+	}
+
+	if len(arr.Elements) != 5 {
+		t.Errorf("expected 5 elements, got %d", len(arr.Elements))
+	}
+}
+
+func TestSliceLiteral(t *testing.T) {
+	input := `nums := []int{10, 20, 30};`
+
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	stmt := program.Statements[0].(*ast.InferStatement)
+	arr, ok := stmt.Value.(*ast.ArrayLiteral)
+	if !ok {
+		t.Fatalf("expected ArrayLiteral, got %T", stmt.Value)
+	}
+
+	if arr.Type == nil {
+		t.Fatal("expected array type")
+	}
+
+	if arr.Type.ArrayLen != -1 {
+		t.Errorf("expected slice (ArrayLen -1), got %d", arr.Type.ArrayLen)
+	}
+
+	if len(arr.Elements) != 3 {
+		t.Errorf("expected 3 elements, got %d", len(arr.Elements))
+	}
+}
+
+func TestMakeExpression(t *testing.T) {
+	input := `buf := make([]int, 10);`
+
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	stmt := program.Statements[0].(*ast.InferStatement)
+	mk, ok := stmt.Value.(*ast.MakeExpression)
+	if !ok {
+		t.Fatalf("expected MakeExpression, got %T", stmt.Value)
+	}
+
+	if mk.Type.ArrayLen != -1 {
+		t.Errorf("expected slice type, got ArrayLen %d", mk.Type.ArrayLen)
+	}
+
+	if mk.Length == nil {
+		t.Error("expected length argument")
+	}
+}
+
+func TestLenExpression(t *testing.T) {
+	input := `size := len(arr);`
+
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	stmt := program.Statements[0].(*ast.InferStatement)
+	call, ok := stmt.Value.(*ast.CallExpression)
+	if !ok {
+		t.Fatalf("expected CallExpression, got %T", stmt.Value)
+	}
+
+	fn, ok := call.Function.(*ast.Identifier)
+	if !ok || fn.Value != "len" {
+		t.Errorf("expected 'len' function, got %v", call.Function)
+	}
+
+	if len(call.Arguments) != 1 {
+		t.Errorf("expected 1 argument, got %d", len(call.Arguments))
+	}
+}
+
+func TestArrayIndexing(t *testing.T) {
+	input := `x := arr[0];`
+
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	stmt := program.Statements[0].(*ast.InferStatement)
+	idx, ok := stmt.Value.(*ast.IndexExpression)
+	if !ok {
+		t.Fatalf("expected IndexExpression, got %T", stmt.Value)
+	}
+
+	if idx.Left.String() != "arr" {
+		t.Errorf("expected 'arr', got %q", idx.Left.String())
+	}
+}
+
 func TestFullProgram(t *testing.T) {
 	input := `
 public struct User {
