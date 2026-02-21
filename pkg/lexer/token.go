@@ -77,6 +77,7 @@ const (
 	FALSE
 	ALLOC
 	FREE
+	DEFER
 
 	// Types
 	TYPE_INT
@@ -145,6 +146,7 @@ var tokenNames = map[TokenType]string{
 	FALSE:        "false",
 	ALLOC:        "alloc",
 	FREE:         "free",
+	DEFER:        "defer",
 	TYPE_INT:     "int",
 	TYPE_FLOAT:   "float",
 	TYPE_STRING:  "string",
@@ -176,6 +178,7 @@ var keywords = map[string]TokenType{
 	"false":    FALSE,
 	"alloc":    ALLOC,
 	"free":     FREE,
+	"defer":    DEFER,
 	"int":      TYPE_INT,
 	"float":    TYPE_FLOAT,
 	"string":   TYPE_STRING,
