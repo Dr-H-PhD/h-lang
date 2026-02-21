@@ -14,8 +14,10 @@ type Generator struct {
 	indent        int
 	structs       map[string]*ast.StructStatement
 	functions     map[string]*ast.FunctionStatement
+	enums         map[string]*ast.EnumStatement
 	variables     map[string]string // variable name -> type (e.g., "User*", "int")
 	deferredStmts []ast.Statement   // Stack of deferred statements
+	usesMap       bool              // true if the program uses maps
 }
 
 // New creates a new code generator
@@ -23,27 +25,32 @@ func New() *Generator {
 	return &Generator{
 		structs:   make(map[string]*ast.StructStatement),
 		functions: make(map[string]*ast.FunctionStatement),
+		enums:     make(map[string]*ast.EnumStatement),
 		variables: make(map[string]string),
 	}
 }
 
 // Generate produces C code from the AST
 func (g *Generator) Generate(program *ast.Program) string {
-	// First pass: collect struct and function declarations
+	// First pass: collect struct, enum and function declarations
 	for _, stmt := range program.Statements {
 		switch s := stmt.(type) {
 		case *ast.StructStatement:
 			g.structs[s.Name.Value] = s
 		case *ast.FunctionStatement:
 			g.functions[s.Name.Value] = s
+		case *ast.EnumStatement:
+			g.enums[s.Name.Value] = s
 		}
 	}
 
 	// Generate header
+	g.writeLine("#define _POSIX_C_SOURCE 200809L")
 	g.writeLine("#include <stdio.h>")
 	g.writeLine("#include <stdlib.h>")
 	g.writeLine("#include <string.h>")
 	g.writeLine("#include <stdbool.h>")
+	g.writeLine("#include <stdint.h>")
 	g.writeLine("")
 
 	// Generate type definitions for strings
@@ -62,6 +69,19 @@ func (g *Generator) Generate(program *ast.Program) string {
 	g.indent--
 	g.writeLine("}")
 	g.writeLine("")
+
+	// Check if maps are used and generate map helpers
+	g.checkForMaps(program)
+	if g.usesMap {
+		g.generateMapHelpers()
+	}
+
+	// Generate enum definitions
+	for _, stmt := range program.Statements {
+		if s, ok := stmt.(*ast.EnumStatement); ok {
+			g.generateEnum(s)
+		}
+	}
 
 	// Generate struct forward declarations
 	for name := range g.structs {
@@ -122,6 +142,208 @@ func (g *Generator) generateStruct(s *ast.StructStatement) {
 	g.writeLine("")
 }
 
+func (g *Generator) generateEnum(s *ast.EnumStatement) {
+	g.writeLine(fmt.Sprintf("typedef enum {"))
+	g.indent++
+
+	for i, val := range s.Values {
+		suffix := ","
+		if i == len(s.Values)-1 {
+			suffix = ""
+		}
+
+		// Generate EnumName_ValueName for C-style namespacing
+		valueName := fmt.Sprintf("%s_%s", s.Name.Value, val.Name.Value)
+
+		if val.Value != nil {
+			g.writeLine(fmt.Sprintf("%s = %s%s", valueName, g.generateExpression(val.Value), suffix))
+		} else {
+			g.writeLine(fmt.Sprintf("%s%s", valueName, suffix))
+		}
+	}
+
+	g.indent--
+	g.writeLine(fmt.Sprintf("} %s;", s.Name.Value))
+	g.writeLine("")
+}
+
+func (g *Generator) checkForMaps(program *ast.Program) {
+	for _, stmt := range program.Statements {
+		if g.statementUsesMap(stmt) {
+			g.usesMap = true
+			return
+		}
+	}
+}
+
+func (g *Generator) statementUsesMap(stmt ast.Statement) bool {
+	switch s := stmt.(type) {
+	case *ast.FunctionStatement:
+		return g.blockUsesMap(s.Body)
+	case *ast.DeleteStatement:
+		return true
+	}
+	return false
+}
+
+func (g *Generator) blockUsesMap(block *ast.BlockStatement) bool {
+	if block == nil {
+		return false
+	}
+	for _, stmt := range block.Statements {
+		switch s := stmt.(type) {
+		case *ast.InferStatement:
+			if _, ok := s.Value.(*ast.MapLiteral); ok {
+				return true
+			}
+		case *ast.VarStatement:
+			if s.Type != nil && s.Type.IsMap {
+				return true
+			}
+		case *ast.DeleteStatement:
+			return true
+		case *ast.IfStatement:
+			if g.blockUsesMap(s.Consequence) || g.blockUsesMap(s.Alternative) {
+				return true
+			}
+		case *ast.ForStatement:
+			if g.blockUsesMap(s.Body) {
+				return true
+			}
+		case *ast.WhileStatement:
+			if g.blockUsesMap(s.Body) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (g *Generator) generateMapHelpers() {
+	// Simple hash map implementation for string keys
+	g.writeLine("// Hash map implementation")
+	g.writeLine("#define H_MAP_SIZE 256")
+	g.writeLine("")
+	g.writeLine("typedef struct h_map_entry {")
+	g.indent++
+	g.writeLine("char* key;")
+	g.writeLine("void* value;")
+	g.writeLine("struct h_map_entry* next;")
+	g.indent--
+	g.writeLine("} h_map_entry;")
+	g.writeLine("")
+	g.writeLine("typedef struct {")
+	g.indent++
+	g.writeLine("h_map_entry* buckets[H_MAP_SIZE];")
+	g.writeLine("int size;")
+	g.indent--
+	g.writeLine("} h_map;")
+	g.writeLine("")
+
+	// Hash function
+	g.writeLine("unsigned int h_map_hash(const char* key) {")
+	g.indent++
+	g.writeLine("unsigned int hash = 0;")
+	g.writeLine("while (*key) { hash = hash * 31 + *key++; }")
+	g.writeLine("return hash % H_MAP_SIZE;")
+	g.indent--
+	g.writeLine("}")
+	g.writeLine("")
+
+	// Create map
+	g.writeLine("h_map* h_map_new() {")
+	g.indent++
+	g.writeLine("h_map* m = (h_map*)calloc(1, sizeof(h_map));")
+	g.writeLine("return m;")
+	g.indent--
+	g.writeLine("}")
+	g.writeLine("")
+
+	// Set value
+	g.writeLine("void h_map_set(h_map* m, const char* key, void* value) {")
+	g.indent++
+	g.writeLine("unsigned int idx = h_map_hash(key);")
+	g.writeLine("h_map_entry* entry = m->buckets[idx];")
+	g.writeLine("while (entry) {")
+	g.indent++
+	g.writeLine("if (strcmp(entry->key, key) == 0) { entry->value = value; return; }")
+	g.writeLine("entry = entry->next;")
+	g.indent--
+	g.writeLine("}")
+	g.writeLine("h_map_entry* new_entry = (h_map_entry*)malloc(sizeof(h_map_entry));")
+	g.writeLine("new_entry->key = strdup(key);")
+	g.writeLine("new_entry->value = value;")
+	g.writeLine("new_entry->next = m->buckets[idx];")
+	g.writeLine("m->buckets[idx] = new_entry;")
+	g.writeLine("m->size++;")
+	g.indent--
+	g.writeLine("}")
+	g.writeLine("")
+
+	// Get value
+	g.writeLine("void* h_map_get(h_map* m, const char* key) {")
+	g.indent++
+	g.writeLine("unsigned int idx = h_map_hash(key);")
+	g.writeLine("h_map_entry* entry = m->buckets[idx];")
+	g.writeLine("while (entry) {")
+	g.indent++
+	g.writeLine("if (strcmp(entry->key, key) == 0) { return entry->value; }")
+	g.writeLine("entry = entry->next;")
+	g.indent--
+	g.writeLine("}")
+	g.writeLine("return NULL;")
+	g.indent--
+	g.writeLine("}")
+	g.writeLine("")
+
+	// Delete entry
+	g.writeLine("void h_map_delete(h_map* m, const char* key) {")
+	g.indent++
+	g.writeLine("unsigned int idx = h_map_hash(key);")
+	g.writeLine("h_map_entry* entry = m->buckets[idx];")
+	g.writeLine("h_map_entry* prev = NULL;")
+	g.writeLine("while (entry) {")
+	g.indent++
+	g.writeLine("if (strcmp(entry->key, key) == 0) {")
+	g.indent++
+	g.writeLine("if (prev) prev->next = entry->next;")
+	g.writeLine("else m->buckets[idx] = entry->next;")
+	g.writeLine("free(entry->key); free(entry); m->size--;")
+	g.writeLine("return;")
+	g.indent--
+	g.writeLine("}")
+	g.writeLine("prev = entry; entry = entry->next;")
+	g.indent--
+	g.writeLine("}")
+	g.indent--
+	g.writeLine("}")
+	g.writeLine("")
+
+	// Get size
+	g.writeLine("int h_map_len(h_map* m) { return m->size; }")
+	g.writeLine("")
+
+	// Free map
+	g.writeLine("void h_map_free(h_map* m) {")
+	g.indent++
+	g.writeLine("for (int i = 0; i < H_MAP_SIZE; i++) {")
+	g.indent++
+	g.writeLine("h_map_entry* entry = m->buckets[i];")
+	g.writeLine("while (entry) {")
+	g.indent++
+	g.writeLine("h_map_entry* next = entry->next;")
+	g.writeLine("free(entry->key); free(entry);")
+	g.writeLine("entry = next;")
+	g.indent--
+	g.writeLine("}")
+	g.indent--
+	g.writeLine("}")
+	g.writeLine("free(m);")
+	g.indent--
+	g.writeLine("}")
+	g.writeLine("")
+}
+
 func (g *Generator) generateFunctionDeclaration(f *ast.FunctionStatement) {
 	returnType := "void"
 	if f.ReturnType != nil {
@@ -129,6 +351,12 @@ func (g *Generator) generateFunctionDeclaration(f *ast.FunctionStatement) {
 	}
 
 	funcName := f.Name.Value
+
+	// C standard requires int main()
+	if funcName == "main" && f.ReturnType == nil {
+		returnType = "int"
+	}
+
 	if f.Receiver != nil {
 		// Method: StructName_methodName
 		typeName := f.Receiver.Type.Name
@@ -149,6 +377,13 @@ func (g *Generator) generateFunction(f *ast.FunctionStatement) {
 	}
 
 	funcName := f.Name.Value
+	isMain := funcName == "main"
+
+	// C standard requires int main()
+	if isMain && f.ReturnType == nil {
+		returnType = "int"
+	}
+
 	if f.Receiver != nil {
 		typeName := f.Receiver.Type.Name
 		if f.Receiver.Type.IsPtr {
@@ -181,6 +416,11 @@ func (g *Generator) generateFunction(f *ast.FunctionStatement) {
 
 	// Emit any remaining deferred statements at function end
 	g.emitDeferredStatements()
+
+	// C standard requires main to return 0
+	if isMain && f.ReturnType == nil {
+		g.writeLine("return 0;")
+	}
 
 	g.indent--
 	g.writeLine("}")
@@ -259,6 +499,8 @@ func (g *Generator) generateStatement(stmt ast.Statement) {
 		g.writeLine("break;")
 	case *ast.ContinueStatement:
 		g.writeLine("continue;")
+	case *ast.DeleteStatement:
+		g.generateDeleteStatement(s)
 	case *ast.ExpressionStatement:
 		g.writeLine(g.generateExpression(s.Expression) + ";")
 	}
@@ -287,6 +529,20 @@ func (g *Generator) generateConstStatement(s *ast.ConstStatement) {
 }
 
 func (g *Generator) generateInferStatement(s *ast.InferStatement) {
+	// Special handling for map literals
+	if ml, ok := s.Value.(*ast.MapLiteral); ok {
+		g.variables[s.Name.Value] = "h_map*"
+		g.writeLine(fmt.Sprintf("h_map* %s = h_map_new();", s.Name.Value))
+		// Add each pair
+		for _, pair := range ml.Pairs {
+			keyExpr := g.generateExpression(pair.Key)
+			valueExpr := g.generateExpression(pair.Value)
+			// Cast value to void* (for integers, use intptr_t cast)
+			g.writeLine(fmt.Sprintf("h_map_set(%s, %s, (void*)(intptr_t)%s);", s.Name.Value, keyExpr, valueExpr))
+		}
+		return
+	}
+
 	// Special handling for array literals
 	if arr, ok := s.Value.(*ast.ArrayLiteral); ok && arr.Type != nil {
 		elemType := g.typeToC(&ast.TypeAnnotation{Name: arr.Type.Name})
@@ -310,6 +566,12 @@ func (g *Generator) generateInferStatement(s *ast.InferStatement) {
 
 	// Special handling for make expressions
 	if mk, ok := s.Value.(*ast.MakeExpression); ok {
+		// Check if it's a map type
+		if mk.Type != nil && mk.Type.IsMap {
+			g.variables[s.Name.Value] = "h_map*"
+			g.writeLine(fmt.Sprintf("h_map* %s = h_map_new();", s.Name.Value))
+			return
+		}
 		elemType := g.typeToC(&ast.TypeAnnotation{Name: mk.Type.Name})
 		g.variables[s.Name.Value] = elemType + "*"
 		g.writeLine(fmt.Sprintf("%s* %s = %s;", elemType, s.Name.Value, g.generateExpression(s.Value)))
@@ -394,8 +656,8 @@ func (g *Generator) generateForRangeStatement(s *ast.ForRangeStatement) {
 	}
 
 	// Generate the for loop header
-	// for (int i = 0; i < (sizeof(arr)/sizeof(arr[0])); i++)
-	g.writeLine(fmt.Sprintf("for (int %s = 0; %s < (sizeof(%s)/sizeof(%s[0])); %s++) {",
+	// for (int i = 0; i < (int)(sizeof(arr)/sizeof(arr[0])); i++)
+	g.writeLine(fmt.Sprintf("for (int %s = 0; %s < (int)(sizeof(%s)/sizeof(%s[0])); %s++) {",
 		indexVar, indexVar, iterableExpr, iterableExpr, indexVar))
 	g.indent++
 
@@ -434,7 +696,20 @@ func (g *Generator) inferElementType(expr ast.Expression) string {
 }
 
 func (g *Generator) generateFreeStatement(s *ast.FreeStatement) {
+	// Check if freeing a map
+	if ident, ok := s.Value.(*ast.Identifier); ok {
+		if varType, exists := g.variables[ident.Value]; exists && varType == "h_map*" {
+			g.writeLine(fmt.Sprintf("h_map_free(%s);", ident.Value))
+			return
+		}
+	}
 	g.writeLine(fmt.Sprintf("free(%s);", g.generateExpression(s.Value)))
+}
+
+func (g *Generator) generateDeleteStatement(s *ast.DeleteStatement) {
+	mapExpr := g.generateExpression(s.Map)
+	keyExpr := g.generateExpression(s.Key)
+	g.writeLine(fmt.Sprintf("h_map_delete(%s, %s);", mapExpr, keyExpr))
 }
 
 func (g *Generator) generateStatementInline(stmt ast.Statement) string {
@@ -482,10 +757,27 @@ func (g *Generator) generateExpression(expr ast.Expression) string {
 	case *ast.PostfixExpression:
 		return fmt.Sprintf("(%s%s)", g.generateExpression(e.Left), e.Operator)
 	case *ast.AssignExpression:
+		// Check if left side is a map index expression
+		if idx, ok := e.Left.(*ast.IndexExpression); ok {
+			if ident, ok := idx.Left.(*ast.Identifier); ok {
+				if varType, exists := g.variables[ident.Value]; exists && varType == "h_map*" {
+					// Map assignment: h_map_set(map, key, (void*)(intptr_t)value)
+					return fmt.Sprintf("h_map_set(%s, %s, (void*)(intptr_t)%s)",
+						ident.Value, g.generateExpression(idx.Index), g.generateExpression(e.Value))
+				}
+			}
+		}
 		return fmt.Sprintf("(%s %s %s)", g.generateExpression(e.Left), e.Operator, g.generateExpression(e.Value))
 	case *ast.CallExpression:
 		return g.generateCallExpression(e)
 	case *ast.IndexExpression:
+		// Check if left side is a map
+		if ident, ok := e.Left.(*ast.Identifier); ok {
+			if varType, exists := g.variables[ident.Value]; exists && varType == "h_map*" {
+				// Map access: cast from void* to int
+				return fmt.Sprintf("(int)(intptr_t)h_map_get(%s, %s)", ident.Value, g.generateExpression(e.Index))
+			}
+		}
 		return fmt.Sprintf("%s[%s]", g.generateExpression(e.Left), g.generateExpression(e.Index))
 	case *ast.MemberExpression:
 		obj := g.generateExpression(e.Object)
@@ -506,11 +798,17 @@ func (g *Generator) generateExpression(expr ast.Expression) string {
 		return fmt.Sprintf("{%s}", strings.Join(elements, ", "))
 	case *ast.MakeExpression:
 		return g.generateMakeExpression(e)
+	case *ast.MapLiteral:
+		return g.generateMapLiteral(e)
 	}
 	return ""
 }
 
 func (g *Generator) generateMakeExpression(e *ast.MakeExpression) string {
+	// Check if it's a map type
+	if e.Type != nil && e.Type.IsMap {
+		return "h_map_new()"
+	}
 	elemType := g.typeToC(&ast.TypeAnnotation{Name: e.Type.Name})
 	if e.Length != nil {
 		length := g.generateExpression(e.Length)
@@ -519,6 +817,12 @@ func (g *Generator) generateMakeExpression(e *ast.MakeExpression) string {
 	}
 	// Default to empty allocation
 	return fmt.Sprintf("(%s*)calloc(0, sizeof(%s))", elemType, elemType)
+}
+
+func (g *Generator) generateMapLiteral(e *ast.MapLiteral) string {
+	// Map literals are handled specially in generateInferStatement
+	// This just returns h_map_new() for use in expressions
+	return "h_map_new()"
 }
 
 func (g *Generator) generateCallExpression(e *ast.CallExpression) string {
@@ -560,17 +864,21 @@ func (g *Generator) generateCallExpression(e *ast.CallExpression) string {
 		return "printf(\"\\n\")"
 	}
 
-	// Handle len() for arrays and strings
+	// Handle len() for arrays, strings, and maps
 	if funcName == "len" {
 		if len(e.Arguments) > 0 {
 			arg := e.Arguments[0]
 			argStr := g.generateExpression(arg)
-			// For strings, use strlen; for arrays, use sizeof
-			switch arg.(type) {
+			// For strings, use strlen; for arrays, use sizeof; for maps, use h_map_len
+			switch a := arg.(type) {
 			case *ast.StringLiteral:
 				return fmt.Sprintf("strlen(%s)", argStr)
 			case *ast.Identifier:
-				// Check if it's a string or array - for now assume array
+				// Check if it's a map
+				if varType, ok := g.variables[a.Value]; ok && varType == "h_map*" {
+					return fmt.Sprintf("h_map_len(%s)", argStr)
+				}
+				// Assume array
 				return fmt.Sprintf("(sizeof(%s)/sizeof(%s[0]))", argStr, argStr)
 			default:
 				return fmt.Sprintf("(sizeof(%s)/sizeof(%s[0]))", argStr, argStr)

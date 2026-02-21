@@ -16,7 +16,7 @@ func TestGenerate_HelloWorld(t *testing.T) {
 	code := compile(t, input)
 
 	assertContains(t, code, "#include <stdio.h>")
-	assertContains(t, code, "void main(void)")
+	assertContains(t, code, "int main(void)")
 	assertContains(t, code, "printf")
 	assertContains(t, code, "Hello, H-lang!")
 }
@@ -329,7 +329,7 @@ function add(a int, b int) int {
 
 	// Should have forward declaration before main
 	declPos := strings.Index(code, "int add(int a, int b);")
-	mainPos := strings.Index(code, "void main(void) {")
+	mainPos := strings.Index(code, "int main(void) {")
 
 	if declPos == -1 || mainPos == -1 {
 		t.Fatal("missing forward declaration or main")
@@ -393,6 +393,190 @@ func TestGenerate_MakeSlice(t *testing.T) {
 
 	assertContains(t, code, "int* buf")
 	assertContains(t, code, "calloc(10, sizeof(int))")
+}
+
+func TestGenerate_ForRangeLoop(t *testing.T) {
+	input := `function main() {
+    arr := [5]int{1, 2, 3, 4, 5};
+    for i, v := range arr {
+        print(v);
+    }
+}`
+
+	code := compile(t, input)
+
+	assertContains(t, code, "for (int i = 0;")
+	assertContains(t, code, "sizeof(arr)/sizeof(arr[0])")
+	assertContains(t, code, "int v = arr[i];")
+}
+
+func TestGenerate_ForRangeIndexOnly(t *testing.T) {
+	input := `function main() {
+    arr := [3]int{10, 20, 30};
+    for i := range arr {
+        print(i);
+    }
+}`
+
+	code := compile(t, input)
+
+	assertContains(t, code, "for (int i = 0;")
+	assertContains(t, code, "sizeof(arr)/sizeof(arr[0])")
+}
+
+func TestGenerate_BreakStatement(t *testing.T) {
+	input := `function main() {
+    for i := 0; i < 10; i++ {
+        if i == 5 {
+            break;
+        }
+    }
+}`
+
+	code := compile(t, input)
+
+	assertContains(t, code, "break;")
+}
+
+func TestGenerate_ContinueStatement(t *testing.T) {
+	input := `function main() {
+    for i := 0; i < 10; i++ {
+        if i == 5 {
+            continue;
+        }
+    }
+}`
+
+	code := compile(t, input)
+
+	assertContains(t, code, "continue;")
+}
+
+func TestGenerate_Enum(t *testing.T) {
+	input := `enum Color {
+    Red,
+    Green,
+    Blue
+}`
+
+	code := compile(t, input)
+
+	assertContains(t, code, "typedef enum {")
+	assertContains(t, code, "Color_Red")
+	assertContains(t, code, "Color_Green")
+	assertContains(t, code, "Color_Blue")
+	assertContains(t, code, "} Color;")
+}
+
+func TestGenerate_EnumWithValues(t *testing.T) {
+	input := `enum Status {
+    Pending = 0,
+    Active = 1,
+    Cancelled = 100
+}`
+
+	code := compile(t, input)
+
+	assertContains(t, code, "Status_Pending = 0")
+	assertContains(t, code, "Status_Active = 1")
+	assertContains(t, code, "Status_Cancelled = 100")
+}
+
+func TestGenerate_EnumUsage(t *testing.T) {
+	input := `enum Color {
+    Red,
+    Green,
+    Blue
+}
+
+function main() {
+    c := Color_Red;
+    if c == Color_Red {
+        print(1);
+    }
+}`
+
+	code := compile(t, input)
+
+	assertContains(t, code, "int c = Color_Red;")
+	assertContains(t, code, "(c == Color_Red)")
+}
+
+func TestGenerate_MapLiteral(t *testing.T) {
+	input := `function main() {
+    ages := map[string]int{"Alice": 30, "Bob": 25};
+    print(ages["Alice"]);
+}`
+
+	code := compile(t, input)
+
+	// Check map helpers are generated
+	assertContains(t, code, "h_map* ages = h_map_new();")
+	assertContains(t, code, "h_map_set(ages,")
+	assertContains(t, code, "h_map_get(ages,")
+}
+
+func TestGenerate_MapAssignment(t *testing.T) {
+	input := `function main() {
+    ages := map[string]int{};
+    ages["Charlie"] = 35;
+}`
+
+	code := compile(t, input)
+
+	assertContains(t, code, "h_map* ages = h_map_new();")
+	assertContains(t, code, "h_map_set(ages,")
+}
+
+func TestGenerate_MapDelete(t *testing.T) {
+	input := `function main() {
+    ages := map[string]int{"Alice": 30};
+    delete(ages, "Alice");
+}`
+
+	code := compile(t, input)
+
+	assertContains(t, code, "h_map_delete(ages,")
+}
+
+func TestGenerate_MapLen(t *testing.T) {
+	input := `function main() {
+    ages := map[string]int{"Alice": 30, "Bob": 25};
+    count := len(ages);
+}`
+
+	code := compile(t, input)
+
+	assertContains(t, code, "h_map_len(ages)")
+}
+
+func TestGenerate_MapFree(t *testing.T) {
+	input := `function main() {
+    ages := map[string]int{};
+    free(ages);
+}`
+
+	code := compile(t, input)
+
+	assertContains(t, code, "h_map_free(ages);")
+}
+
+func TestGenerate_MapHelpers(t *testing.T) {
+	input := `function main() {
+    m := map[string]int{};
+}`
+
+	code := compile(t, input)
+
+	// Verify map helper functions are generated
+	assertContains(t, code, "typedef struct h_map_entry")
+	assertContains(t, code, "typedef struct {")
+	assertContains(t, code, "h_map* h_map_new()")
+	assertContains(t, code, "void h_map_set(h_map* m,")
+	assertContains(t, code, "void* h_map_get(h_map* m,")
+	assertContains(t, code, "void h_map_delete(h_map* m,")
+	assertContains(t, code, "int h_map_len(h_map* m)")
+	assertContains(t, code, "void h_map_free(h_map* m)")
 }
 
 // Helper functions
