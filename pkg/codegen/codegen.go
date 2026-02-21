@@ -10,10 +10,11 @@ import (
 
 // Generator generates C code from H-lang AST
 type Generator struct {
-	output     bytes.Buffer
-	indent     int
-	structs    map[string]*ast.StructStatement
-	functions  map[string]*ast.FunctionStatement
+	output         bytes.Buffer
+	indent         int
+	structs        map[string]*ast.StructStatement
+	functions      map[string]*ast.FunctionStatement
+	deferredStmts  []ast.Statement // Stack of deferred statements
 }
 
 // New creates a new code generator
@@ -145,7 +146,13 @@ func (g *Generator) generateFunction(f *ast.FunctionStatement) {
 	g.writeLine(fmt.Sprintf("%s %s(%s) {", returnType, funcName, params))
 	g.indent++
 
+	// Clear deferred statements for this function
+	g.deferredStmts = nil
+
 	g.generateBlock(f.Body)
+
+	// Emit any remaining deferred statements at function end
+	g.emitDeferredStatements()
 
 	g.indent--
 	g.writeLine("}")
@@ -178,6 +185,26 @@ func (g *Generator) generateBlock(block *ast.BlockStatement) {
 	}
 }
 
+// emitDeferredStatements emits deferred statements in reverse order (LIFO)
+func (g *Generator) emitDeferredStatements() {
+	for i := len(g.deferredStmts) - 1; i >= 0; i-- {
+		g.generateStatementDirect(g.deferredStmts[i])
+	}
+}
+
+// generateStatementDirect generates a statement without defer handling
+func (g *Generator) generateStatementDirect(stmt ast.Statement) {
+	switch s := stmt.(type) {
+	case *ast.ExpressionStatement:
+		g.writeLine(g.generateExpression(s.Expression) + ";")
+	case *ast.FreeStatement:
+		g.writeLine(fmt.Sprintf("free(%s);", g.generateExpression(s.Value)))
+	default:
+		// For other statements, use regular generation
+		g.generateStatement(stmt)
+	}
+}
+
 func (g *Generator) generateStatement(stmt ast.Statement) {
 	switch s := stmt.(type) {
 	case *ast.VarStatement:
@@ -196,9 +223,16 @@ func (g *Generator) generateStatement(stmt ast.Statement) {
 		g.generateWhileStatement(s)
 	case *ast.FreeStatement:
 		g.generateFreeStatement(s)
+	case *ast.DeferStatement:
+		g.generateDeferStatement(s)
 	case *ast.ExpressionStatement:
 		g.writeLine(g.generateExpression(s.Expression) + ";")
 	}
+}
+
+func (g *Generator) generateDeferStatement(s *ast.DeferStatement) {
+	// Add to deferred stack - will be executed at return or function end
+	g.deferredStmts = append(g.deferredStmts, s.Statement)
 }
 
 func (g *Generator) generateVarStatement(s *ast.VarStatement) {
@@ -222,9 +256,17 @@ func (g *Generator) generateInferStatement(s *ast.InferStatement) {
 }
 
 func (g *Generator) generateReturnStatement(s *ast.ReturnStatement) {
-	if s.Value != nil {
+	// If there's a return value, save it to a temp variable first
+	if s.Value != nil && len(g.deferredStmts) > 0 {
+		retType := g.inferType(s.Value)
+		g.writeLine(fmt.Sprintf("%s __ret_val = %s;", retType, g.generateExpression(s.Value)))
+		g.emitDeferredStatements()
+		g.writeLine("return __ret_val;")
+	} else if s.Value != nil {
+		g.emitDeferredStatements()
 		g.writeLine(fmt.Sprintf("return %s;", g.generateExpression(s.Value)))
 	} else {
+		g.emitDeferredStatements()
 		g.writeLine("return;")
 	}
 }
