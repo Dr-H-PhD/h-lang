@@ -7,6 +7,7 @@ A statically-typed, compiled programming language that blends C and Go syntax wi
 - **Static types with inference** — Type safety without verbosity
 - **Manual memory management** — Full control with `alloc`/`free`
 - **Defer statement** — Cleanup runs at function exit (like Go)
+- **Arrays and slices** — Fixed `[5]int` and dynamic `make([]int, n)`
 - **C/Go syntax blend** — Familiar to systems programmers
 - **Transpiles to C** — Portable and optimized
 - **Three comment styles** — `//`, `/* */`, and `#`
