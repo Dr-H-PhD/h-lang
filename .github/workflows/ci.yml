@@ -1,0 +1,152 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test:
+    name: Test on ${{ matrix.os }} (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # AMD64/x86_64
+          - os: ubuntu-latest
+            arch: amd64
+            cc: gcc
+          - os: ubuntu-latest
+            arch: amd64
+            cc: clang
+          - os: macos-latest
+            arch: amd64
+            cc: clang
+          - os: windows-latest
+            arch: amd64
+            cc: gcc
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Install GCC (Ubuntu)
+        if: matrix.os == 'ubuntu-latest' && matrix.cc == 'gcc'
+        run: sudo apt-get update && sudo apt-get install -y gcc
+
+      - name: Install Clang (Ubuntu)
+        if: matrix.os == 'ubuntu-latest' && matrix.cc == 'clang'
+        run: sudo apt-get update && sudo apt-get install -y clang
+
+      - name: Build compiler
+        run: go build -o hlc ./cmd/hlc
+
+      - name: Run Go tests
+        run: go test ./... -v
+
+      - name: Compile examples (Unix)
+        if: matrix.os != 'windows-latest'
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          for f in examples/*.hl; do
+            echo "=== Compiling: $f ==="
+            ./hlc -emit-c "$f"
+            name=$(basename "$f" .hl)
+            $CC -Wall -Wextra -pedantic -std=c99 -o "${name}" "${name}.c"
+            echo "  OK"
+          done
+
+      - name: Compile examples (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          for f in examples/*.hl; do
+            echo "=== Compiling: $f ==="
+            ./hlc -emit-c "$f"
+            name=$(basename "$f" .hl)
+            gcc -Wall -Wextra -std=c99 -o "${name}.exe" "${name}.c"
+            echo "  OK"
+          done
+
+      - name: Run examples (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          for f in examples/*.hl; do
+            name=$(basename "$f" .hl)
+            echo "=== Running: $name ==="
+            ./"$name" | head -5
+          done
+
+      - name: Run examples (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          for f in examples/*.hl; do
+            name=$(basename "$f" .hl)
+            echo "=== Running: $name ==="
+            ./"$name".exe | head -5
+          done
+
+  # Cross-compilation test for ARM
+  cross-compile:
+    name: Cross-compile for ARM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Install cross-compilers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-linux-gnueabihf gcc-aarch64-linux-gnu
+
+      - name: Build H-lang compiler
+        run: go build -o hlc ./cmd/hlc
+
+      - name: Cross-compile to ARM32
+        run: |
+          echo "=== Cross-compiling for ARM32 ==="
+          ./hlc -emit-c examples/hello.hl
+          arm-linux-gnueabihf-gcc -Wall -Wextra -std=c99 -o hello_arm32 hello.c
+          file hello_arm32
+
+      - name: Cross-compile to ARM64
+        run: |
+          echo "=== Cross-compiling for ARM64 ==="
+          ./hlc -emit-c examples/fibonacci.hl
+          aarch64-linux-gnu-gcc -Wall -Wextra -std=c99 -o fibonacci_arm64 fibonacci.c
+          file fibonacci_arm64
+
+  # Code quality
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Run go fmt check
+        run: |
+          if [ -n "$(gofmt -l .)" ]; then
+            echo "Code is not formatted. Run 'go fmt ./...'"
+            gofmt -d .
+            exit 1
+          fi
