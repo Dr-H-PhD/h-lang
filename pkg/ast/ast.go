@@ -535,6 +535,18 @@ func (fs *FreeStatement) String() string {
 	return "free(" + fs.Value.String() + ");"
 }
 
+// DeferStatement: defer stmt;
+type DeferStatement struct {
+	Token     lexer.Token
+	Statement Statement
+}
+
+func (ds *DeferStatement) statementNode()       {}
+func (ds *DeferStatement) TokenLiteral() string { return ds.Token.Literal }
+func (ds *DeferStatement) String() string {
+	return "defer " + ds.Statement.String()
+}
+
 // ArrayLiteral: [1, 2, 3] or [5]int{1, 2, 3, 4, 5}
 type ArrayLiteral struct {
 	Token    lexer.Token
