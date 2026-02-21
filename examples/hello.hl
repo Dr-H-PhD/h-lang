@@ -1,0 +1,5 @@
+# hello.hl - Hello World in H-lang
+
+function main() {
+    print("Hello, H-lang!");
+}

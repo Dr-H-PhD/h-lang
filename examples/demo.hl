@@ -1,0 +1,76 @@
+# demo.hl - H-lang Feature Demonstration
+
+// User struct with public and private fields
+public struct User {
+    public name string;
+    public age int;
+    email string;  // private
+}
+
+// Method on User pointer
+public function (u *User) greet() string {
+    return "Hello, " + u.name;
+}
+
+// Simple function with parameters
+function add(a int, b int) int {
+    return a + b;
+}
+
+// Function demonstrating control flow
+function factorial(n int) int {
+    if n <= 1 {
+        return 1;
+    }
+    return n * factorial(n - 1);
+}
+
+// Main entry point
+function main() {
+    // Variable inference
+    x := 42;
+    const PI := 3.14159;
+
+    // Explicit type
+    var count int = 0;
+
+    // Heap allocation
+    user := alloc(User);
+    user.name = "Achraf";
+    user.age = 30;
+
+    // Null check
+    if user != null {
+        print(user.greet());
+    }
+
+    // Pointers
+    ptr := &x;
+    *ptr = 100;
+    print(x);
+
+    // For loop
+    for i := 0; i < 5; i++ {
+        print(i);
+    }
+
+    // While loop
+    while count < 3 {
+        count++;
+    }
+
+    // Function calls
+    result := add(10, 20);
+    print(result);
+
+    fact := factorial(5);
+    print(fact);
+
+    // Casting
+    f := 3.7;
+    i := (int)f;
+    print(i);
+
+    // Clean up
+    free(user);
+}
