@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Building H-lang: CLI</title>
+    <style>
+        :root { --bg: #0d1117; --fg: #c9d1d9; --accent: #00ADD8; --code-bg: #161b22; --border: #30363d; --green: #10b981; }
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; background: var(--bg); color: var(--fg); line-height: 1.6; max-width: 900px; margin: 0 auto; padding: 2rem; }
+        h1, h2, h3 { color: var(--accent); }
+        h1 { border-bottom: 2px solid var(--border); padding-bottom: 0.5rem; }
+        a { color: var(--accent); }
+        code { background: var(--code-bg); padding: 0.2rem 0.4rem; border-radius: 4px; font-family: 'Consolas', 'Monaco', monospace; }
+        pre { background: var(--code-bg); padding: 1rem; border-radius: 8px; overflow-x: auto; border: 1px solid var(--border); }
+        pre code { padding: 0; background: none; }
+        .note { background: rgba(0, 173, 216, 0.1); border-left: 4px solid var(--accent); padding: 1rem; margin: 1rem 0; border-radius: 0 8px 8px 0; }
+        nav { display: flex; justify-content: space-between; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+        nav a { padding: 0.5rem 1rem; background: var(--code-bg); border-radius: 4px; text-decoration: none; }
+        nav a:hover { background: var(--border); }
+        table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+        th, td { border: 1px solid var(--border); padding: 0.5rem; text-align: left; }
+        th { background: var(--code-bg); color: var(--accent); }
+    </style>
+</head>
+<body>
+    <h1>Building H-lang: CLI</h1>
+    <p><strong>Part 6: The Compiler Command</strong></p>
+
+    <h2>Overview</h2>
+    <p>The <code>hlc</code> command ties everything together — reading source files, compiling, and invoking the C compiler.</p>
+
+    <h2>Command Usage</h2>
+    <pre><code>hlc [options] &lt;file.hl&gt;
+
+Options:
+  -o &lt;file&gt;     Output file name
+  -emit-c       Emit C code instead of compiling
+  -run          Compile and run immediately
+  -version      Print version
+  -help         Print help</code></pre>
+
+    <h2>Examples</h2>
+    <table>
+        <tr>
+            <th>Command</th>
+            <th>Result</th>
+        </tr>
+        <tr>
+            <td><code>hlc hello.hl</code></td>
+            <td>Compile to <code>./hello</code></td>
+        </tr>
+        <tr>
+            <td><code>hlc -o myapp hello.hl</code></td>
+            <td>Compile to <code>./myapp</code></td>
+        </tr>
+        <tr>
+            <td><code>hlc -emit-c hello.hl</code></td>
+            <td>Generate <code>hello.c</code></td>
+        </tr>
+        <tr>
+            <td><code>hlc -run hello.hl</code></td>
+            <td>Compile and execute</td>
+        </tr>
+    </table>
+
+    <h2>Implementation</h2>
+    <pre><code>// cmd/hlc/main.go
+package main
+
+import (
+    "flag"
+    "fmt"
+    "os"
+    "os/exec"
+    "path/filepath"
+    "strings"
+
+    "github.com/Dr-H-PhD/h-lang/pkg/codegen"
+    "github.com/Dr-H-PhD/h-lang/pkg/lexer"
+    "github.com/Dr-H-PhD/h-lang/pkg/parser"
+)
+
+const version = "0.1.0"
+
+func main() {
+    outputFlag := flag.String("o", "", "Output file name")
+    emitC := flag.Bool("emit-c", false, "Emit C code instead of compiling")
+    runFlag := flag.Bool("run", false, "Compile and run immediately")
+    versionFlag := flag.Bool("version", false, "Print version")
+
+    flag.Parse()
+
+    if *versionFlag {
+        fmt.Printf("H-lang compiler (hlc) version %s\n", version)
+        os.Exit(0)
+    }
+
+    if flag.NArg() == 0 {
+        printUsage()
+        os.Exit(0)
+    }
+
+    inputFile := flag.Arg(0)
+
+    // Validate input
+    if !strings.HasSuffix(inputFile, ".hl") {
+        fmt.Fprintln(os.Stderr, "Error: input must have .hl extension")
+        os.Exit(1)
+    }
+
+    // Read source
+    source, err := os.ReadFile(inputFile)
+    if err != nil {
+        fmt.Fprintf(os.Stderr, "Error reading file: %v\n", err)
+        os.Exit(1)
+    }
+
+    // Compile
+    cCode, errors := compile(string(source))
+    if len(errors) > 0 {
+        fmt.Fprintln(os.Stderr, "Compilation errors:")
+        for _, e := range errors {
+            fmt.Fprintf(os.Stderr, "  %s\n", e)
+        }
+        os.Exit(1)
+    }
+
+    // Handle output
+    baseName := strings.TrimSuffix(filepath.Base(inputFile), ".hl")
+
+    if *emitC {
+        cFileName := baseName + ".c"
+        if *outputFlag != "" {
+            cFileName = *outputFlag
+        }
+        os.WriteFile(cFileName, []byte(cCode), 0644)
+        fmt.Printf("Generated: %s\n", cFileName)
+        return
+    }
+
+    // Compile to binary
+    outputName := baseName
+    if *outputFlag != "" {
+        outputName = *outputFlag
+    }
+
+    // Write temp C file
+    tmpDir, _ := os.MkdirTemp("", "hlc-*")
+    defer os.RemoveAll(tmpDir)
+
+    tmpCFile := filepath.Join(tmpDir, baseName+".c")
+    os.WriteFile(tmpCFile, []byte(cCode), 0644)
+
+    // Invoke gcc/clang
+    compiler := findCompiler()
+    cmd := exec.Command(compiler, "-o", outputName, tmpCFile)
+    cmd.Stdout = os.Stdout
+    cmd.Stderr = os.Stderr
+
+    if err := cmd.Run(); err != nil {
+        fmt.Fprintf(os.Stderr, "Error compiling: %v\n", err)
+        os.Exit(1)
+    }
+
+    fmt.Printf("Compiled: %s\n", outputName)
+
+    // Run if requested
+    if *runFlag {
+        fmt.Println("---")
+        runCmd := exec.Command("./" + outputName)
+        runCmd.Stdout = os.Stdout
+        runCmd.Stderr = os.Stderr
+        runCmd.Run()
+    }
+}</code></pre>
+
+    <h2>Compile Function</h2>
+    <pre><code>func compile(source string) (string, []string) {
+    // Lexer
+    l := lexer.New(source)
+
+    // Parser
+    p := parser.New(l)
+    program := p.ParseProgram()
+
+    if len(p.Errors()) > 0 {
+        return "", p.Errors()
+    }
+
+    // Code generation
+    g := codegen.New()
+    cCode := g.Generate(program)
+
+    return cCode, nil
+}</code></pre>
+
+    <h2>Finding the C Compiler</h2>
+    <pre><code>func findCompiler() string {
+    compilers := []string{"gcc", "clang", "cc"}
+    for _, c := range compilers {
+        path, err := exec.LookPath(c)
+        if err == nil {
+            return path
+        }
+    }
+    return ""
+}</code></pre>
+
+    <h2>Build and Install</h2>
+    <pre><code># Build the compiler
+go build -o hlc ./cmd/hlc
+
+# Install globally (optional)
+go install ./cmd/hlc
+
+# Test it
+./hlc examples/hello.hl
+./hello</code></pre>
+
+    <h2>Compilation Pipeline</h2>
+    <pre><code>$ hlc -run examples/hello.hl
+Compiled: hello
+---
+Hello, H-lang!</code></pre>
+
+    <p>What happens internally:</p>
+    <ol>
+        <li>Read <code>hello.hl</code></li>
+        <li>Lexer produces tokens</li>
+        <li>Parser builds AST</li>
+        <li>Codegen emits C code</li>
+        <li>Write to temp file <code>/tmp/hlc-xxx/hello.c</code></li>
+        <li>Run <code>gcc -o hello /tmp/hlc-xxx/hello.c</code></li>
+        <li>Execute <code>./hello</code></li>
+    </ol>
+
+    <div class="note">
+        <strong>Why temp files?</strong>
+        <p>We write C to a temp directory and clean up after. This keeps the user's directory clean unless they use <code>-emit-c</code>.</p>
+    </div>
+
+    <nav>
+        <a href="05-codegen.html">← Previous: Code Generation</a>
+        <a href="07-testing.html">Next: Testing →</a>
+    </nav>
+</body>
+</html>

@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Building H-lang: Lexer</title>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --fg: #c9d1d9;
+            --accent: #00ADD8;
+            --code-bg: #161b22;
+            --border: #30363d;
+            --green: #10b981;
+            --orange: #f97316;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--fg);
+            line-height: 1.6;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        h1, h2, h3 { color: var(--accent); }
+        h1 { border-bottom: 2px solid var(--border); padding-bottom: 0.5rem; }
+        a { color: var(--accent); }
+        code {
+            background: var(--code-bg);
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            font-family: 'Consolas', 'Monaco', monospace;
+        }
+        pre {
+            background: var(--code-bg);
+            padding: 1rem;
+            border-radius: 8px;
+            overflow-x: auto;
+            border: 1px solid var(--border);
+            position: relative;
+        }
+        pre code { padding: 0; background: none; }
+        pre::before {
+            content: attr(data-lang);
+            position: absolute;
+            top: 0.5rem;
+            right: 0.5rem;
+            font-size: 0.75rem;
+            color: #6e7681;
+        }
+        .note {
+            background: rgba(0, 173, 216, 0.1);
+            border-left: 4px solid var(--accent);
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 0 8px 8px 0;
+        }
+        .warning {
+            background: rgba(249, 115, 22, 0.1);
+            border-left: 4px solid var(--orange);
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 0 8px 8px 0;
+        }
+        nav {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 2rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--border);
+        }
+        nav a {
+            padding: 0.5rem 1rem;
+            background: var(--code-bg);
+            border-radius: 4px;
+            text-decoration: none;
+        }
+        nav a:hover { background: var(--border); }
+        table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+        th, td { border: 1px solid var(--border); padding: 0.5rem; text-align: left; }
+        th { background: var(--code-bg); color: var(--accent); }
+    </style>
+</head>
+<body>
+    <h1>Building H-lang: Lexer</h1>
+    <p><strong>Part 2: Tokenizing H-lang Source Code</strong></p>
+
+    <h2>What is a Lexer?</h2>
+    <p>A lexer (or scanner/tokenizer) converts source code text into a stream of <strong>tokens</strong>. Each token represents a meaningful unit like a keyword, identifier, operator, or literal.</p>
+
+    <pre><code>// Input
+x := 42;
+
+// Output tokens
+IDENT("x") WALRUS(":=") INT("42") SEMICOLON(";")</code></pre>
+
+    <h2>Token Types</h2>
+    <p>First, let's define all the token types H-lang supports. Create <code>pkg/lexer/token.go</code>:</p>
+
+    <pre data-lang="go"><code>// pkg/lexer/token.go
+package lexer
+
+import "fmt"
+
+// TokenType represents the type of a token
+type TokenType int
+
+const (
+    // Special tokens
+    ILLEGAL TokenType = iota
+    EOF
+    COMMENT
+
+    // Identifiers and literals
+    IDENT  // variable names, function names
+    INT    // 123
+    FLOAT  // 3.14
+    STRING // "hello"
+    CHAR   // 'a'
+
+    // Operators
+    ASSIGN    // =
+    PLUS      // +
+    MINUS     // -
+    ASTERISK  // *
+    SLASH     // /
+    PERCENT   // %
+    BANG      // !
+    AMPERSAND // &
+
+    LT  // &lt;
+    GT  // &gt;
+    LTE // &lt;=
+    GTE // &gt;=
+    EQ  // ==
+    NEQ // !=
+    AND // &amp;&amp;
+    OR  // ||
+
+    INCREMENT // ++
+    DECREMENT // --
+
+    PLUS_ASSIGN  // +=
+    MINUS_ASSIGN // -=
+    MUL_ASSIGN   // *=
+    DIV_ASSIGN   // /=
+
+    WALRUS // :=
+
+    // Delimiters
+    COMMA     // ,
+    SEMICOLON // ;
+    COLON     // :
+    DOT       // .
+    ARROW     // =&gt;
+
+    LPAREN   // (
+    RPAREN   // )
+    LBRACE   // {
+    RBRACE   // }
+    LBRACKET // [
+    RBRACKET // ]
+
+    // Keywords
+    FUNCTION
+    STRUCT
+    IF
+    ELSE
+    FOR
+    WHILE
+    RETURN
+    CONST
+    VAR
+    PUBLIC
+    NULL
+    TRUE
+    FALSE
+    ALLOC
+    FREE
+
+    // Types
+    TYPE_INT
+    TYPE_FLOAT
+    TYPE_STRING
+    TYPE_CHAR
+    TYPE_BOOL
+    TYPE_VOID
+)</code></pre>
+
+    <h2>Keyword Lookup</h2>
+    <p>We need a way to distinguish keywords from identifiers:</p>
+
+    <pre data-lang="go"><code>var keywords = map[string]TokenType{
+    "function": FUNCTION,
+    "struct":   STRUCT,
+    "if":       IF,
+    "else":     ELSE,
+    "for":      FOR,
+    "while":    WHILE,
+    "return":   RETURN,
+    "const":    CONST,
+    "var":      VAR,
+    "public":   PUBLIC,
+    "null":     NULL,
+    "true":     TRUE,
+    "false":    FALSE,
+    "alloc":    ALLOC,
+    "free":     FREE,
+    "int":      TYPE_INT,
+    "float":    TYPE_FLOAT,
+    "string":   TYPE_STRING,
+    "char":     TYPE_CHAR,
+    "bool":     TYPE_BOOL,
+    "void":     TYPE_VOID,
+}
+
+// LookupIdent checks if an identifier is a keyword
+func LookupIdent(ident string) TokenType {
+    if tok, ok := keywords[ident]; ok {
+        return tok
+    }
+    return IDENT
+}</code></pre>
+
+    <h2>Token Structure</h2>
+    <pre data-lang="go"><code>// Token represents a lexical token
+type Token struct {
+    Type    TokenType
+    Literal string
+    Line    int
+    Column  int
+}
+
+// Position returns formatted position
+func (t Token) Position() string {
+    return fmt.Sprintf("%d:%d", t.Line, t.Column)
+}</code></pre>
+
+    <h2>The Lexer</h2>
+    <p>Now create <code>pkg/lexer/lexer.go</code>:</p>
+
+    <pre data-lang="go"><code>// pkg/lexer/lexer.go
+package lexer
+
+import "unicode"
+
+// Lexer tokenizes H-lang source code
+type Lexer struct {
+    input   string
+    pos     int  // current position in input
+    readPos int  // next reading position
+    ch      byte // current character
+    line    int
+    column  int
+}
+
+// New creates a new Lexer
+func New(input string) *Lexer {
+    l := &amp;Lexer{
+        input:  input,
+        line:   1,
+        column: 0,
+    }
+    l.readChar()
+    return l
+}
+
+func (l *Lexer) readChar() {
+    if l.readPos >= len(l.input) {
+        l.ch = 0 // EOF
+    } else {
+        l.ch = l.input[l.readPos]
+    }
+    l.pos = l.readPos
+    l.readPos++
+    l.column++
+
+    if l.ch == '\n' {
+        l.line++
+        l.column = 0
+    }
+}
+
+func (l *Lexer) peekChar() byte {
+    if l.readPos >= len(l.input) {
+        return 0
+    }
+    return l.input[l.readPos]
+}</code></pre>
+
+    <h2>NextToken Method</h2>
+    <p>The core of the lexer — reads the next token:</p>
+
+    <pre data-lang="go"><code>// NextToken returns the next token
+func (l *Lexer) NextToken() Token {
+    var tok Token
+
+    l.skipWhitespace()
+
+    tok.Line = l.line
+    tok.Column = l.column
+
+    switch l.ch {
+    case '=':
+        if l.peekChar() == '=' {
+            l.readChar()
+            tok = Token{Type: EQ, Literal: "==", Line: tok.Line, Column: tok.Column}
+        } else if l.peekChar() == '&gt;' {
+            l.readChar()
+            tok = Token{Type: ARROW, Literal: "=&gt;", Line: tok.Line, Column: tok.Column}
+        } else {
+            tok = l.newToken(ASSIGN, l.ch)
+        }
+    case '+':
+        if l.peekChar() == '+' {
+            l.readChar()
+            tok = Token{Type: INCREMENT, Literal: "++", Line: tok.Line, Column: tok.Column}
+        } else if l.peekChar() == '=' {
+            l.readChar()
+            tok = Token{Type: PLUS_ASSIGN, Literal: "+=", Line: tok.Line, Column: tok.Column}
+        } else {
+            tok = l.newToken(PLUS, l.ch)
+        }
+    case '-':
+        if l.peekChar() == '-' {
+            l.readChar()
+            tok = Token{Type: DECREMENT, Literal: "--", Line: tok.Line, Column: tok.Column}
+        } else if l.peekChar() == '=' {
+            l.readChar()
+            tok = Token{Type: MINUS_ASSIGN, Literal: "-=", Line: tok.Line, Column: tok.Column}
+        } else {
+            tok = l.newToken(MINUS, l.ch)
+        }
+    // ... handle all other cases
+    case '/':
+        if l.peekChar() == '/' {
+            // Single-line comment
+            tok.Type = COMMENT
+            tok.Literal = l.readLineComment()
+            return tok
+        } else if l.peekChar() == '*' {
+            // Multi-line comment
+            tok.Type = COMMENT
+            tok.Literal = l.readBlockComment()
+            return tok
+        } else {
+            tok = l.newToken(SLASH, l.ch)
+        }
+    case '#':
+        // Shell-style comment
+        tok.Type = COMMENT
+        tok.Literal = l.readLineComment()
+        return tok
+    case ':':
+        if l.peekChar() == '=' {
+            l.readChar()
+            tok = Token{Type: WALRUS, Literal: ":=", Line: tok.Line, Column: tok.Column}
+        } else {
+            tok = l.newToken(COLON, l.ch)
+        }
+    case ';':
+        tok = l.newToken(SEMICOLON, l.ch)
+    case '"':
+        tok.Type = STRING
+        tok.Literal = l.readString()
+        return tok
+    case 0:
+        tok.Literal = ""
+        tok.Type = EOF
+    default:
+        if isLetter(l.ch) {
+            tok.Literal = l.readIdentifier()
+            tok.Type = LookupIdent(tok.Literal)
+            return tok
+        } else if isDigit(l.ch) {
+            tok.Literal, tok.Type = l.readNumber()
+            return tok
+        } else {
+            tok = l.newToken(ILLEGAL, l.ch)
+        }
+    }
+
+    l.readChar()
+    return tok
+}</code></pre>
+
+    <h2>Helper Methods</h2>
+    <pre data-lang="go"><code>func (l *Lexer) skipWhitespace() {
+    for l.ch == ' ' || l.ch == '\t' || l.ch == '\n' || l.ch == '\r' {
+        l.readChar()
+    }
+}
+
+func (l *Lexer) readIdentifier() string {
+    pos := l.pos
+    for isLetter(l.ch) || isDigit(l.ch) || l.ch == '_' {
+        l.readChar()
+    }
+    return l.input[pos:l.pos]
+}
+
+func (l *Lexer) readNumber() (string, TokenType) {
+    pos := l.pos
+    tokenType := INT
+
+    for isDigit(l.ch) {
+        l.readChar()
+    }
+
+    // Check for float
+    if l.ch == '.' &amp;&amp; isDigit(l.peekChar()) {
+        tokenType = FLOAT
+        l.readChar() // consume '.'
+        for isDigit(l.ch) {
+            l.readChar()
+        }
+    }
+
+    return l.input[pos:l.pos], tokenType
+}
+
+func (l *Lexer) readString() string {
+    l.readChar() // skip opening "
+    pos := l.pos
+
+    for l.ch != '"' &amp;&amp; l.ch != 0 {
+        if l.ch == '\\' {
+            l.readChar() // skip escape char
+        }
+        l.readChar()
+    }
+
+    str := l.input[pos:l.pos]
+    l.readChar() // skip closing "
+    return str
+}
+
+func (l *Lexer) readLineComment() string {
+    if l.ch == '/' {
+        l.readChar()
+    }
+    l.readChar()
+
+    pos := l.pos
+    for l.ch != '\n' &amp;&amp; l.ch != 0 {
+        l.readChar()
+    }
+    return l.input[pos:l.pos]
+}
+
+func isLetter(ch byte) bool {
+    return unicode.IsLetter(rune(ch)) || ch == '_'
+}
+
+func isDigit(ch byte) bool {
+    return '0' &lt;= ch &amp;&amp; ch &lt;= '9'
+}</code></pre>
+
+    <h2>Testing the Lexer</h2>
+    <pre data-lang="go"><code>// pkg/lexer/lexer_test.go
+package lexer
+
+import "testing"
+
+func TestNextToken(t *testing.T) {
+    input := `x := 42;`
+
+    l := New(input)
+
+    tests := []struct {
+        expectedType    TokenType
+        expectedLiteral string
+    }{
+        {IDENT, "x"},
+        {WALRUS, ":="},
+        {INT, "42"},
+        {SEMICOLON, ";"},
+        {EOF, ""},
+    }
+
+    for i, tt := range tests {
+        tok := l.NextToken()
+
+        if tok.Type != tt.expectedType {
+            t.Fatalf("tests[%d] - wrong type. expected=%v, got=%v",
+                i, tt.expectedType, tok.Type)
+        }
+
+        if tok.Literal != tt.expectedLiteral {
+            t.Fatalf("tests[%d] - wrong literal. expected=%q, got=%q",
+                i, tt.expectedLiteral, tok.Literal)
+        }
+    }
+}</code></pre>
+
+    <div class="note">
+        <strong>Run the test:</strong>
+        <pre><code>go test ./pkg/lexer -v</code></pre>
+    </div>
+
+    <h2>Three Comment Styles</h2>
+    <p>H-lang supports three comment styles as specified:</p>
+    <table>
+        <tr>
+            <th>Style</th>
+            <th>Syntax</th>
+            <th>Example</th>
+        </tr>
+        <tr>
+            <td>C single-line</td>
+            <td><code>//</code></td>
+            <td><code>// This is a comment</code></td>
+        </tr>
+        <tr>
+            <td>C multi-line</td>
+            <td><code>/* */</code></td>
+            <td><code>/* Multi-line */</code></td>
+        </tr>
+        <tr>
+            <td>Shell/Python</td>
+            <td><code>#</code></td>
+            <td><code># This is a comment</code></td>
+        </tr>
+    </table>
+
+    <h2>Summary</h2>
+    <p>We've built a complete lexer that:</p>
+    <ul>
+        <li>Tokenizes H-lang source code</li>
+        <li>Handles all operators, including multi-character ones (<code>:=</code>, <code>==</code>, <code>++</code>)</li>
+        <li>Recognizes keywords vs identifiers</li>
+        <li>Parses integers, floats, strings, and characters</li>
+        <li>Supports three comment styles</li>
+        <li>Tracks line and column for error messages</li>
+    </ul>
+
+    <nav>
+        <a href="01-project-setup.html">← Previous: Project Setup</a>
+        <a href="03-ast.html">Next: AST →</a>
+    </nav>
+</body>
+</html>

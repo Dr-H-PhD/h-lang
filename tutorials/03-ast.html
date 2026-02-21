@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Building H-lang: AST</title>
+    <style>
+        :root { --bg: #0d1117; --fg: #c9d1d9; --accent: #00ADD8; --code-bg: #161b22; --border: #30363d; }
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; background: var(--bg); color: var(--fg); line-height: 1.6; max-width: 900px; margin: 0 auto; padding: 2rem; }
+        h1, h2, h3 { color: var(--accent); }
+        h1 { border-bottom: 2px solid var(--border); padding-bottom: 0.5rem; }
+        a { color: var(--accent); }
+        code { background: var(--code-bg); padding: 0.2rem 0.4rem; border-radius: 4px; font-family: 'Consolas', 'Monaco', monospace; }
+        pre { background: var(--code-bg); padding: 1rem; border-radius: 8px; overflow-x: auto; border: 1px solid var(--border); }
+        pre code { padding: 0; background: none; }
+        .note { background: rgba(0, 173, 216, 0.1); border-left: 4px solid var(--accent); padding: 1rem; margin: 1rem 0; border-radius: 0 8px 8px 0; }
+        nav { display: flex; justify-content: space-between; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+        nav a { padding: 0.5rem 1rem; background: var(--code-bg); border-radius: 4px; text-decoration: none; }
+        nav a:hover { background: var(--border); }
+    </style>
+</head>
+<body>
+    <h1>Building H-lang: AST</h1>
+    <p><strong>Part 3: Abstract Syntax Tree</strong></p>
+
+    <h2>What is an AST?</h2>
+    <p>An Abstract Syntax Tree (AST) is a tree representation of source code structure. Each node represents a construct in the language.</p>
+
+    <pre><code>// Source
+x := 1 + 2;
+
+// AST
+InferStatement
+├── Name: Identifier("x")
+└── Value: InfixExpression
+    ├── Left: IntegerLiteral(1)
+    ├── Operator: "+"
+    └── Right: IntegerLiteral(2)</code></pre>
+
+    <h2>Base Interfaces</h2>
+    <p>Create <code>pkg/ast/ast.go</code>:</p>
+
+    <pre><code>package ast
+
+import "github.com/Dr-H-PhD/h-lang/pkg/lexer"
+
+// Node is the base interface for all AST nodes
+type Node interface {
+    TokenLiteral() string
+    String() string
+}
+
+// Statement represents a statement node
+type Statement interface {
+    Node
+    statementNode()
+}
+
+// Expression represents an expression node
+type Expression interface {
+    Node
+    expressionNode()
+}
+
+// Program is the root node of the AST
+type Program struct {
+    Statements []Statement
+}</code></pre>
+
+    <h2>Literals</h2>
+    <pre><code>// Identifier represents a variable name
+type Identifier struct {
+    Token lexer.Token
+    Value string
+}
+
+func (i *Identifier) expressionNode()      {}
+func (i *Identifier) TokenLiteral() string { return i.Token.Literal }
+func (i *Identifier) String() string       { return i.Value }
+
+// IntegerLiteral represents an integer
+type IntegerLiteral struct {
+    Token lexer.Token
+    Value int64
+}
+
+// FloatLiteral, StringLiteral, CharLiteral, BooleanLiteral, NullLiteral
+// follow the same pattern...</code></pre>
+
+    <h2>Statements</h2>
+    <pre><code>// VarStatement: var x int = 5;
+type VarStatement struct {
+    Token lexer.Token
+    Name  *Identifier
+    Type  *TypeAnnotation
+    Value Expression
+}
+
+// ConstStatement: const x := 5;
+type ConstStatement struct {
+    Token lexer.Token
+    Name  *Identifier
+    Value Expression
+}
+
+// InferStatement: x := 5; (type inferred)
+type InferStatement struct {
+    Token lexer.Token
+    Name  *Identifier
+    Value Expression
+}
+
+// ReturnStatement: return x;
+type ReturnStatement struct {
+    Token lexer.Token
+    Value Expression
+}
+
+// BlockStatement: { ... }
+type BlockStatement struct {
+    Token      lexer.Token
+    Statements []Statement
+}</code></pre>
+
+    <h2>Functions and Structs</h2>
+    <pre><code>// Parameter represents a function parameter
+type Parameter struct {
+    Name *Identifier
+    Type *TypeAnnotation
+}
+
+// FunctionStatement: function foo(x int) int { ... }
+type FunctionStatement struct {
+    Token      lexer.Token
+    Public     bool
+    Receiver   *Parameter // nil for regular functions
+    Name       *Identifier
+    Parameters []*Parameter
+    ReturnType *TypeAnnotation
+    Body       *BlockStatement
+}
+
+// StructField represents a field in a struct
+type StructField struct {
+    Public bool
+    Name   *Identifier
+    Type   *TypeAnnotation
+}
+
+// StructStatement: struct Foo { ... }
+type StructStatement struct {
+    Token  lexer.Token
+    Public bool
+    Name   *Identifier
+    Fields []*StructField
+}</code></pre>
+
+    <h2>Control Flow</h2>
+    <pre><code>// IfStatement: if x > 0 { ... } else { ... }
+type IfStatement struct {
+    Token       lexer.Token
+    Condition   Expression
+    Consequence *BlockStatement
+    Alternative *BlockStatement
+}
+
+// ForStatement: for i := 0; i < 10; i++ { ... }
+type ForStatement struct {
+    Token     lexer.Token
+    Init      Statement
+    Condition Expression
+    Post      Statement
+    Body      *BlockStatement
+}
+
+// WhileStatement: while x > 0 { ... }
+type WhileStatement struct {
+    Token     lexer.Token
+    Condition Expression
+    Body      *BlockStatement
+}</code></pre>
+
+    <h2>Expressions</h2>
+    <pre><code>// PrefixExpression: -x, !x, &x, *x
+type PrefixExpression struct {
+    Token    lexer.Token
+    Operator string
+    Right    Expression
+}
+
+// InfixExpression: x + y
+type InfixExpression struct {
+    Token    lexer.Token
+    Left     Expression
+    Operator string
+    Right    Expression
+}
+
+// PostfixExpression: x++, x--
+type PostfixExpression struct {
+    Token    lexer.Token
+    Left     Expression
+    Operator string
+}
+
+// CallExpression: foo(x, y)
+type CallExpression struct {
+    Token     lexer.Token
+    Function  Expression
+    Arguments []Expression
+}
+
+// MemberExpression: user.name
+type MemberExpression struct {
+    Token  lexer.Token
+    Object Expression
+    Member *Identifier
+}
+
+// IndexExpression: arr[0]
+type IndexExpression struct {
+    Token lexer.Token
+    Left  Expression
+    Index Expression
+}
+
+// CastExpression: (int)x
+type CastExpression struct {
+    Token      lexer.Token
+    TargetType *TypeAnnotation
+    Value      Expression
+}
+
+// AllocExpression: alloc(User)
+type AllocExpression struct {
+    Token lexer.Token
+    Type  *TypeAnnotation
+}</code></pre>
+
+    <h2>Type Annotations</h2>
+    <pre><code>// TypeAnnotation represents a type
+type TypeAnnotation struct {
+    Token    lexer.Token
+    Name     string
+    IsPtr    bool   // true if *Type
+    ArrayLen int    // -1 for slice, 0 for non-array, >0 for fixed
+}</code></pre>
+
+    <h2>Node Categories</h2>
+    <table style="width:100%; border-collapse:collapse; margin:1rem 0;">
+        <tr style="border-bottom: 1px solid var(--border);">
+            <th style="padding:0.75rem; background:var(--code-bg); color:var(--accent);">Category</th>
+            <th style="padding:0.75rem; background:var(--code-bg); color:var(--accent);">Nodes</th>
+        </tr>
+        <tr style="border-bottom: 1px solid var(--border);">
+            <td style="padding:0.75rem;">Literals</td>
+            <td style="padding:0.75rem;">Identifier, Integer, Float, String, Char, Boolean, Null</td>
+        </tr>
+        <tr style="border-bottom: 1px solid var(--border);">
+            <td style="padding:0.75rem;">Declarations</td>
+            <td style="padding:0.75rem;">VarStatement, ConstStatement, InferStatement, FunctionStatement, StructStatement</td>
+        </tr>
+        <tr style="border-bottom: 1px solid var(--border);">
+            <td style="padding:0.75rem;">Control Flow</td>
+            <td style="padding:0.75rem;">IfStatement, ForStatement, WhileStatement, ReturnStatement</td>
+        </tr>
+        <tr style="border-bottom: 1px solid var(--border);">
+            <td style="padding:0.75rem;">Expressions</td>
+            <td style="padding:0.75rem;">Prefix, Infix, Postfix, Call, Member, Index, Cast, Assign</td>
+        </tr>
+        <tr>
+            <td style="padding:0.75rem;">Memory</td>
+            <td style="padding:0.75rem;">AllocExpression, FreeStatement</td>
+        </tr>
+    </table>
+
+    <div class="note">
+        <strong>Why separate Statement and Expression?</strong>
+        <p>Statements don't produce values (<code>if</code>, <code>for</code>, <code>var</code>). Expressions do (<code>1 + 2</code>, <code>foo()</code>). This distinction helps the type checker and code generator.</p>
+    </div>
+
+    <nav>
+        <a href="02-lexer.html">← Previous: Lexer</a>
+        <a href="04-parser.html">Next: Parser →</a>
+    </nav>
+</body>
+</html>

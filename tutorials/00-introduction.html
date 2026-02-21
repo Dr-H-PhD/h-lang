@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Building H-lang: Introduction</title>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --fg: #c9d1d9;
+            --accent: #00ADD8;
+            --code-bg: #161b22;
+            --border: #30363d;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--fg);
+            line-height: 1.6;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        h1, h2, h3 { color: var(--accent); }
+        h1 { border-bottom: 2px solid var(--border); padding-bottom: 0.5rem; }
+        a { color: var(--accent); }
+        code {
+            background: var(--code-bg);
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            font-family: 'Consolas', 'Monaco', monospace;
+        }
+        pre {
+            background: var(--code-bg);
+            padding: 1rem;
+            border-radius: 8px;
+            overflow-x: auto;
+            border: 1px solid var(--border);
+        }
+        pre code { padding: 0; background: none; }
+        .note {
+            background: rgba(0, 173, 216, 0.1);
+            border-left: 4px solid var(--accent);
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 0 8px 8px 0;
+        }
+        .spec-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+        }
+        .spec-table th, .spec-table td {
+            border: 1px solid var(--border);
+            padding: 0.75rem;
+            text-align: left;
+        }
+        .spec-table th {
+            background: var(--code-bg);
+            color: var(--accent);
+        }
+        nav {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 2rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--border);
+        }
+        nav a {
+            padding: 0.5rem 1rem;
+            background: var(--code-bg);
+            border-radius: 4px;
+            text-decoration: none;
+        }
+        nav a:hover { background: var(--border); }
+    </style>
+</head>
+<body>
+    <h1>Building H-lang: A Complete Compiler Tutorial</h1>
+    <p><strong>Part 0: Introduction</strong></p>
+
+    <h2>What is H-lang?</h2>
+    <p>H-lang is a statically-typed, compiled programming language that blends C and Go syntax with PHP pragmatism. It transpiles to C, leveraging existing C compilers for optimisation and portability.</p>
+
+    <h2>Design Goals</h2>
+    <ul>
+        <li><strong>Explicit over implicit</strong> — No magic, everything is visible</li>
+        <li><strong>Pragmatic</strong> — Get things done without ceremony</li>
+        <li><strong>C/Go blend</strong> — Familiar syntax for systems programmers</li>
+        <li><strong>Manual memory</strong> — Full control, no garbage collector</li>
+    </ul>
+
+    <h2>Language Specification</h2>
+    <table class="spec-table">
+        <tr><th>Aspect</th><th>Choice</th></tr>
+        <tr><td>File extension</td><td><code>.hl</code></td></tr>
+        <tr><td>Entry point</td><td><code>function main()</code></td></tr>
+        <tr><td>Semicolons</td><td>Required <code>;</code></td></tr>
+        <tr><td>Comments</td><td><code>//</code>, <code>/* */</code>, <code>#</code></td></tr>
+        <tr><td>Visibility</td><td><code>public</code> keyword</td></tr>
+        <tr><td>Functions</td><td><code>function</code> keyword</td></tr>
+        <tr><td>Types</td><td>Static with strong inference</td></tr>
+        <tr><td>Mutability</td><td>All mutable, <code>const</code> for immutable</td></tr>
+        <tr><td>Pointers</td><td>C-style <code>&amp;</code> / <code>*</code></td></tr>
+        <tr><td>Null</td><td>Allowed</td></tr>
+        <tr><td>Casting</td><td>C-style <code>(int)x</code></td></tr>
+        <tr><td>Memory</td><td>Manual (<code>alloc</code>/<code>free</code>)</td></tr>
+        <tr><td>Target</td><td>Transpile to C</td></tr>
+        <tr><td>Implementation</td><td>Go</td></tr>
+    </table>
+
+    <h2>Syntax Preview</h2>
+    <pre><code># hello.hl - Hello World in H-lang
+
+// User struct with public and private fields
+public struct User {
+    public name string;
+    public age int;
+    email string;  // private
+}
+
+// Method on User pointer
+public function (u *User) greet() string {
+    return "Hello, " + u.name;
+}
+
+function main() {
+    // Variable inference
+    x := 42;
+    const PI := 3.14159;
+
+    // Heap allocation
+    user := alloc(User);
+    user.name = "Achraf";
+    user.age = 30;
+
+    if user != null {
+        print(user.greet());
+    }
+
+    // For loop
+    for i := 0; i < 10; i++ {
+        print(i);
+    }
+
+    // Clean up
+    free(user);
+}</code></pre>
+
+    <h2>Compiler Architecture</h2>
+    <pre><code>┌─────────────┐     ┌─────────┐     ┌────────┐     ┌─────────┐     ┌─────────┐
+│  Source     │────▶│  Lexer  │────▶│ Parser │────▶│ Codegen │────▶│ gcc/    │
+│  (.hl)      │     │         │     │  (AST) │     │   (C)   │     │ clang   │
+└─────────────┘     └─────────┘     └────────┘     └─────────┘     └─────────┘
+                         │               │              │
+                         ▼               ▼              ▼
+                      Tokens           AST          C source
+</code></pre>
+
+    <h2>Tutorial Structure</h2>
+    <ol>
+        <li><a href="01-project-setup.html">Project Setup</a> — Initialize the Go project</li>
+        <li><a href="02-lexer.html">Lexer</a> — Tokenize H-lang source code</li>
+        <li><a href="03-ast.html">AST</a> — Define the Abstract Syntax Tree</li>
+        <li><a href="04-parser.html">Parser</a> — Build the AST from tokens</li>
+        <li><a href="05-codegen.html">Code Generation</a> — Generate C code</li>
+        <li><a href="06-cli.html">CLI</a> — Build the compiler command</li>
+        <li><a href="07-testing.html">Testing</a> — Test the compiler</li>
+    </ol>
+
+    <div class="note">
+        <strong>Prerequisites:</strong> Go 1.21+ installed, basic understanding of compilers, familiarity with C and Go syntax.
+    </div>
+
+    <nav>
+        <span></span>
+        <a href="01-project-setup.html">Next: Project Setup →</a>
+    </nav>
+</body>
+</html>

@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Building H-lang: Parser</title>
+    <style>
+        :root { --bg: #0d1117; --fg: #c9d1d9; --accent: #00ADD8; --code-bg: #161b22; --border: #30363d; }
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; background: var(--bg); color: var(--fg); line-height: 1.6; max-width: 900px; margin: 0 auto; padding: 2rem; }
+        h1, h2, h3 { color: var(--accent); }
+        h1 { border-bottom: 2px solid var(--border); padding-bottom: 0.5rem; }
+        a { color: var(--accent); }
+        code { background: var(--code-bg); padding: 0.2rem 0.4rem; border-radius: 4px; font-family: 'Consolas', 'Monaco', monospace; }
+        pre { background: var(--code-bg); padding: 1rem; border-radius: 8px; overflow-x: auto; border: 1px solid var(--border); }
+        pre code { padding: 0; background: none; }
+        .note { background: rgba(0, 173, 216, 0.1); border-left: 4px solid var(--accent); padding: 1rem; margin: 1rem 0; border-radius: 0 8px 8px 0; }
+        nav { display: flex; justify-content: space-between; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+        nav a { padding: 0.5rem 1rem; background: var(--code-bg); border-radius: 4px; text-decoration: none; }
+        nav a:hover { background: var(--border); }
+        table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+        th, td { border: 1px solid var(--border); padding: 0.5rem; text-align: left; }
+        th { background: var(--code-bg); color: var(--accent); }
+    </style>
+</head>
+<body>
+    <h1>Building H-lang: Parser</h1>
+    <p><strong>Part 4: Building the AST from Tokens</strong></p>
+
+    <h2>Pratt Parser</h2>
+    <p>We use a Pratt parser (top-down operator precedence) — elegant for handling expressions with different precedences.</p>
+
+    <h2>Operator Precedence</h2>
+    <pre><code>const (
+    _ int = iota
+    LOWEST
+    ASSIGN      // =, +=, -=
+    OR          // ||
+    AND         // &&
+    EQUALS      // ==, !=
+    LESSGREATER // <, >, <=, >=
+    SUM         // +, -
+    PRODUCT     // *, /, %
+    PREFIX      // -x, !x, &x, *x
+    POSTFIX     // x++, x--
+    CALL        // foo()
+    INDEX       // arr[0]
+    MEMBER      // obj.field
+)
+
+var precedences = map[lexer.TokenType]int{
+    lexer.ASSIGN:   ASSIGN,
+    lexer.OR:       OR,
+    lexer.AND:      AND,
+    lexer.EQ:       EQUALS,
+    lexer.NEQ:      EQUALS,
+    lexer.LT:       LESSGREATER,
+    lexer.GT:       LESSGREATER,
+    lexer.PLUS:     SUM,
+    lexer.MINUS:    SUM,
+    lexer.ASTERISK: PRODUCT,
+    lexer.SLASH:    PRODUCT,
+    lexer.LPAREN:   CALL,
+    lexer.LBRACKET: INDEX,
+    lexer.DOT:      MEMBER,
+}</code></pre>
+
+    <h2>Parser Structure</h2>
+    <pre><code>type Parser struct {
+    l      *lexer.Lexer
+    errors []string
+
+    curToken  lexer.Token
+    peekToken lexer.Token
+
+    prefixParseFns map[lexer.TokenType]prefixParseFn
+    infixParseFns  map[lexer.TokenType]infixParseFn
+}
+
+type prefixParseFn func() ast.Expression
+type infixParseFn func(ast.Expression) ast.Expression</code></pre>
+
+    <h2>Registering Parse Functions</h2>
+    <pre><code>func New(l *lexer.Lexer) *Parser {
+    p := &Parser{l: l, errors: []string{}}
+
+    // Prefix parsers (start of expression)
+    p.prefixParseFns = make(map[lexer.TokenType]prefixParseFn)
+    p.registerPrefix(lexer.IDENT, p.parseIdentifier)
+    p.registerPrefix(lexer.INT, p.parseIntegerLiteral)
+    p.registerPrefix(lexer.STRING, p.parseStringLiteral)
+    p.registerPrefix(lexer.BANG, p.parsePrefixExpression)
+    p.registerPrefix(lexer.MINUS, p.parsePrefixExpression)
+    p.registerPrefix(lexer.AMPERSAND, p.parsePrefixExpression)
+    p.registerPrefix(lexer.LPAREN, p.parseGroupedOrCast)
+
+    // Infix parsers (middle of expression)
+    p.infixParseFns = make(map[lexer.TokenType]infixParseFn)
+    p.registerInfix(lexer.PLUS, p.parseInfixExpression)
+    p.registerInfix(lexer.MINUS, p.parseInfixExpression)
+    p.registerInfix(lexer.ASTERISK, p.parseInfixExpression)
+    p.registerInfix(lexer.LPAREN, p.parseCallExpression)
+    p.registerInfix(lexer.DOT, p.parseMemberExpression)
+
+    p.nextToken()
+    p.nextToken()
+    return p
+}</code></pre>
+
+    <h2>Expression Parsing (Pratt Algorithm)</h2>
+    <pre><code>func (p *Parser) parseExpression(precedence int) ast.Expression {
+    // Get prefix parser for current token
+    prefix := p.prefixParseFns[p.curToken.Type]
+    if prefix == nil {
+        p.errors = append(p.errors,
+            fmt.Sprintf("no prefix parser for %s", p.curToken.Type))
+        return nil
+    }
+    leftExp := prefix()
+
+    // Keep parsing infix as long as precedence allows
+    for !p.peekTokenIs(lexer.SEMICOLON) && precedence < p.peekPrecedence() {
+        infix := p.infixParseFns[p.peekToken.Type]
+        if infix == nil {
+            return leftExp
+        }
+        p.nextToken()
+        leftExp = infix(leftExp)
+    }
+
+    return leftExp
+}</code></pre>
+
+    <h2>Parsing Statements</h2>
+    <pre><code>func (p *Parser) parseStatement() ast.Statement {
+    switch p.curToken.Type {
+    case lexer.PUBLIC:
+        return p.parsePublicStatement()
+    case lexer.FUNCTION:
+        return p.parseFunctionStatement(false)
+    case lexer.STRUCT:
+        return p.parseStructStatement(false)
+    case lexer.VAR:
+        return p.parseVarStatement()
+    case lexer.CONST:
+        return p.parseConstStatement()
+    case lexer.RETURN:
+        return p.parseReturnStatement()
+    case lexer.IF:
+        return p.parseIfStatement()
+    case lexer.FOR:
+        return p.parseForStatement()
+    case lexer.IDENT:
+        if p.peekTokenIs(lexer.WALRUS) {
+            return p.parseInferStatement()
+        }
+        return p.parseExpressionStatement()
+    default:
+        return p.parseExpressionStatement()
+    }
+}</code></pre>
+
+    <h2>Parsing Functions</h2>
+    <pre><code>func (p *Parser) parseFunctionStatement(public bool) *ast.FunctionStatement {
+    stmt := &ast.FunctionStatement{Token: p.curToken, Public: public}
+
+    // Check for receiver: function (r *Type) name() { }
+    if p.peekTokenIs(lexer.LPAREN) {
+        p.nextToken() // consume 'function'
+        p.nextToken() // consume '('
+
+        receiver := &ast.Parameter{
+            Name: &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal},
+        }
+        p.nextToken()
+        receiver.Type = p.parseTypeAnnotation()
+
+        p.expectPeek(lexer.RPAREN)
+        stmt.Receiver = receiver
+        p.nextToken()
+    } else {
+        p.nextToken()
+    }
+
+    // Function name
+    stmt.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+
+    // Parameters
+    p.expectPeek(lexer.LPAREN)
+    stmt.Parameters = p.parseFunctionParameters()
+
+    // Return type (optional)
+    if !p.peekTokenIs(lexer.LBRACE) {
+        p.nextToken()
+        stmt.ReturnType = p.parseTypeAnnotation()
+    }
+
+    // Body
+    p.expectPeek(lexer.LBRACE)
+    stmt.Body = p.parseBlockStatement()
+
+    return stmt
+}</code></pre>
+
+    <h2>Parsing Control Flow</h2>
+    <pre><code>func (p *Parser) parseIfStatement() *ast.IfStatement {
+    stmt := &ast.IfStatement{Token: p.curToken}
+
+    p.nextToken()
+    stmt.Condition = p.parseExpression(LOWEST)
+
+    p.expectPeek(lexer.LBRACE)
+    stmt.Consequence = p.parseBlockStatement()
+
+    if p.peekTokenIs(lexer.ELSE) {
+        p.nextToken()
+        p.expectPeek(lexer.LBRACE)
+        stmt.Alternative = p.parseBlockStatement()
+    }
+
+    return stmt
+}
+
+func (p *Parser) parseForStatement() *ast.ForStatement {
+    stmt := &ast.ForStatement{Token: p.curToken}
+    p.nextToken()
+
+    // Init
+    if !p.curTokenIs(lexer.SEMICOLON) {
+        stmt.Init = p.parseStatement()
+    }
+
+    // Condition
+    if !p.curTokenIs(lexer.SEMICOLON) {
+        stmt.Condition = p.parseExpression(LOWEST)
+    }
+    p.expectPeek(lexer.SEMICOLON)
+    p.nextToken()
+
+    // Post
+    if !p.curTokenIs(lexer.LBRACE) {
+        stmt.Post = p.parseStatement()
+    }
+
+    p.expectPeek(lexer.LBRACE)
+    stmt.Body = p.parseBlockStatement()
+
+    return stmt
+}</code></pre>
+
+    <h2>Example Parse</h2>
+    <pre><code>// Input
+x := 1 + 2 * 3;
+
+// Tokens
+IDENT("x") WALRUS INT(1) PLUS INT(2) ASTERISK INT(3) SEMICOLON
+
+// AST (respects precedence: * before +)
+InferStatement {
+    Name: Identifier("x")
+    Value: InfixExpression {
+        Left: IntegerLiteral(1)
+        Operator: "+"
+        Right: InfixExpression {
+            Left: IntegerLiteral(2)
+            Operator: "*"
+            Right: IntegerLiteral(3)
+        }
+    }
+}</code></pre>
+
+    <div class="note">
+        <strong>Key Insight:</strong> The Pratt parser handles precedence by comparing the current precedence with the next token's precedence. Higher precedence operators "steal" the right operand.
+    </div>
+
+    <nav>
+        <a href="03-ast.html">← Previous: AST</a>
+        <a href="05-codegen.html">Next: Code Generation →</a>
+    </nav>
+</body>
+</html>

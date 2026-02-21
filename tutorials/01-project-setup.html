@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Building H-lang: Project Setup</title>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --fg: #c9d1d9;
+            --accent: #00ADD8;
+            --code-bg: #161b22;
+            --border: #30363d;
+            --green: #10b981;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--fg);
+            line-height: 1.6;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        h1, h2, h3 { color: var(--accent); }
+        h1 { border-bottom: 2px solid var(--border); padding-bottom: 0.5rem; }
+        a { color: var(--accent); }
+        code {
+            background: var(--code-bg);
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            font-family: 'Consolas', 'Monaco', monospace;
+        }
+        pre {
+            background: var(--code-bg);
+            padding: 1rem;
+            border-radius: 8px;
+            overflow-x: auto;
+            border: 1px solid var(--border);
+            position: relative;
+        }
+        pre code { padding: 0; background: none; }
+        pre::before {
+            content: attr(data-lang);
+            position: absolute;
+            top: 0.5rem;
+            right: 0.5rem;
+            font-size: 0.75rem;
+            color: #6e7681;
+        }
+        .note {
+            background: rgba(0, 173, 216, 0.1);
+            border-left: 4px solid var(--accent);
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 0 8px 8px 0;
+        }
+        .step {
+            background: var(--code-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem;
+            margin: 1rem 0;
+        }
+        .step-number {
+            display: inline-block;
+            background: var(--accent);
+            color: var(--bg);
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 28px;
+            font-weight: bold;
+            margin-right: 0.5rem;
+        }
+        nav {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 2rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--border);
+        }
+        nav a {
+            padding: 0.5rem 1rem;
+            background: var(--code-bg);
+            border-radius: 4px;
+            text-decoration: none;
+        }
+        nav a:hover { background: var(--border); }
+        .tree { color: var(--green); }
+    </style>
+</head>
+<body>
+    <h1>Building H-lang: Project Setup</h1>
+    <p><strong>Part 1: Initialize the Go Project</strong></p>
+
+    <h2>Overview</h2>
+    <p>In this tutorial, we'll set up the H-lang compiler project structure. The compiler is written in Go and follows a standard Go project layout.</p>
+
+    <div class="step">
+        <p><span class="step-number">1</span><strong>Create the project directory</strong></p>
+        <pre data-lang="bash"><code>mkdir -p h-lang
+cd h-lang</code></pre>
+    </div>
+
+    <div class="step">
+        <p><span class="step-number">2</span><strong>Initialize Go module</strong></p>
+        <pre data-lang="bash"><code>go mod init github.com/yourusername/h-lang</code></pre>
+        <p>This creates <code>go.mod</code>:</p>
+        <pre data-lang="go.mod"><code>module github.com/yourusername/h-lang
+
+go 1.23</code></pre>
+    </div>
+
+    <div class="step">
+        <p><span class="step-number">3</span><strong>Create the directory structure</strong></p>
+        <pre data-lang="bash"><code>mkdir -p cmd/hlc
+mkdir -p pkg/lexer
+mkdir -p pkg/parser
+mkdir -p pkg/ast
+mkdir -p pkg/types
+mkdir -p pkg/codegen
+mkdir -p examples</code></pre>
+    </div>
+
+    <h2>Project Structure</h2>
+    <pre class="tree"><code>h-lang/
+├── cmd/
+│   └── hlc/              # Compiler CLI
+│       └── main.go
+├── pkg/
+│   ├── lexer/            # Tokenizer
+│   │   ├── token.go      # Token types
+│   │   └── lexer.go      # Lexer implementation
+│   ├── parser/           # AST builder
+│   │   └── parser.go
+│   ├── ast/              # AST types
+│   │   └── ast.go
+│   ├── types/            # Type checker (future)
+│   │   └── checker.go
+│   └── codegen/          # C code generator
+│       └── codegen.go
+├── examples/
+│   ├── hello.hl
+│   └── demo.hl
+├── go.mod
+└── README.md</code></pre>
+
+    <h2>Package Responsibilities</h2>
+    <table class="spec-table" style="width:100%; border-collapse:collapse; margin:1rem 0;">
+        <tr style="border-bottom: 1px solid var(--border);">
+            <th style="padding:0.75rem; text-align:left; background:var(--code-bg); color:var(--accent);">Package</th>
+            <th style="padding:0.75rem; text-align:left; background:var(--code-bg); color:var(--accent);">Purpose</th>
+        </tr>
+        <tr style="border-bottom: 1px solid var(--border);">
+            <td style="padding:0.75rem;"><code>cmd/hlc</code></td>
+            <td style="padding:0.75rem;">Compiler CLI entry point</td>
+        </tr>
+        <tr style="border-bottom: 1px solid var(--border);">
+            <td style="padding:0.75rem;"><code>pkg/lexer</code></td>
+            <td style="padding:0.75rem;">Converts source text into tokens</td>
+        </tr>
+        <tr style="border-bottom: 1px solid var(--border);">
+            <td style="padding:0.75rem;"><code>pkg/ast</code></td>
+            <td style="padding:0.75rem;">Defines AST node types</td>
+        </tr>
+        <tr style="border-bottom: 1px solid var(--border);">
+            <td style="padding:0.75rem;"><code>pkg/parser</code></td>
+            <td style="padding:0.75rem;">Builds AST from tokens</td>
+        </tr>
+        <tr style="border-bottom: 1px solid var(--border);">
+            <td style="padding:0.75rem;"><code>pkg/types</code></td>
+            <td style="padding:0.75rem;">Type checking (future)</td>
+        </tr>
+        <tr>
+            <td style="padding:0.75rem;"><code>pkg/codegen</code></td>
+            <td style="padding:0.75rem;">Generates C code from AST</td>
+        </tr>
+    </table>
+
+    <div class="step">
+        <p><span class="step-number">4</span><strong>Create a placeholder main.go</strong></p>
+        <pre data-lang="go"><code>// cmd/hlc/main.go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("H-lang compiler v0.1.0")
+}</code></pre>
+    </div>
+
+    <div class="step">
+        <p><span class="step-number">5</span><strong>Verify the setup</strong></p>
+        <pre data-lang="bash"><code>go build ./cmd/hlc
+./hlc</code></pre>
+        <p>You should see: <code>H-lang compiler v0.1.0</code></p>
+    </div>
+
+    <h2>Compilation Pipeline</h2>
+    <p>The H-lang compiler follows a standard pipeline:</p>
+    <pre><code>Source (.hl)
+    │
+    ▼
+┌─────────┐  characters   ┌─────────┐  tokens    ┌────────┐
+│  Read   │──────────────▶│  Lexer  │───────────▶│ Parser │
+│  File   │               │         │            │        │
+└─────────┘               └─────────┘            └────────┘
+                                                      │
+                                                      │ AST
+                                                      ▼
+┌─────────┐  binary       ┌─────────┐  C code   ┌─────────┐
+│  gcc/   │◀──────────────│ Codegen │◀──────────│  Type   │
+│  clang  │               │         │           │  Check  │
+└─────────┘               └─────────┘           └─────────┘</code></pre>
+
+    <div class="note">
+        <strong>Why transpile to C?</strong>
+        <ul>
+            <li>Leverage decades of gcc/clang optimisations</li>
+            <li>Instant portability to all platforms</li>
+            <li>Manual memory management maps directly to C</li>
+            <li>Focus on language design, not code generation</li>
+        </ul>
+    </div>
+
+    <h2>Next Steps</h2>
+    <p>With the project structure in place, we'll implement the lexer in the next tutorial. The lexer will convert H-lang source code into a stream of tokens.</p>
+
+    <nav>
+        <a href="00-introduction.html">← Previous: Introduction</a>
+        <a href="02-lexer.html">Next: Lexer →</a>
+    </nav>
+</body>
+</html>

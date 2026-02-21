@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Building H-lang: Code Generation</title>
+    <style>
+        :root { --bg: #0d1117; --fg: #c9d1d9; --accent: #00ADD8; --code-bg: #161b22; --border: #30363d; --green: #10b981; }
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; background: var(--bg); color: var(--fg); line-height: 1.6; max-width: 900px; margin: 0 auto; padding: 2rem; }
+        h1, h2, h3 { color: var(--accent); }
+        h1 { border-bottom: 2px solid var(--border); padding-bottom: 0.5rem; }
+        a { color: var(--accent); }
+        code { background: var(--code-bg); padding: 0.2rem 0.4rem; border-radius: 4px; font-family: 'Consolas', 'Monaco', monospace; }
+        pre { background: var(--code-bg); padding: 1rem; border-radius: 8px; overflow-x: auto; border: 1px solid var(--border); }
+        pre code { padding: 0; background: none; }
+        .note { background: rgba(0, 173, 216, 0.1); border-left: 4px solid var(--accent); padding: 1rem; margin: 1rem 0; border-radius: 0 8px 8px 0; }
+        .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+        .compare > div { background: var(--code-bg); padding: 1rem; border-radius: 8px; }
+        .compare h4 { margin-top: 0; color: var(--green); }
+        nav { display: flex; justify-content: space-between; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+        nav a { padding: 0.5rem 1rem; background: var(--code-bg); border-radius: 4px; text-decoration: none; }
+        nav a:hover { background: var(--border); }
+    </style>
+</head>
+<body>
+    <h1>Building H-lang: Code Generation</h1>
+    <p><strong>Part 5: Transpiling to C</strong></p>
+
+    <h2>Overview</h2>
+    <p>The code generator walks the AST and emits equivalent C code. This is where H-lang becomes executable.</p>
+
+    <pre><code>H-lang AST ──▶ Code Generator ──▶ C source ──▶ gcc/clang ──▶ binary</code></pre>
+
+    <h2>Generator Structure</h2>
+    <pre><code>type Generator struct {
+    output    bytes.Buffer
+    indent    int
+    structs   map[string]*ast.StructStatement
+    functions map[string]*ast.FunctionStatement
+}
+
+func New() *Generator {
+    return &Generator{
+        structs:   make(map[string]*ast.StructStatement),
+        functions: make(map[string]*ast.FunctionStatement),
+    }
+}</code></pre>
+
+    <h2>Generation Process</h2>
+    <pre><code>func (g *Generator) Generate(program *ast.Program) string {
+    // First pass: collect declarations
+    for _, stmt := range program.Statements {
+        switch s := stmt.(type) {
+        case *ast.StructStatement:
+            g.structs[s.Name.Value] = s
+        case *ast.FunctionStatement:
+            g.functions[s.Name.Value] = s
+        }
+    }
+
+    // Emit C header
+    g.writeLine("#include <stdio.h>")
+    g.writeLine("#include <stdlib.h>")
+    g.writeLine("#include <string.h>")
+    g.writeLine("#include <stdbool.h>")
+    g.writeLine("")
+    g.writeLine("typedef char* h_string;")
+    g.writeLine("")
+
+    // Forward declarations
+    for name := range g.structs {
+        g.writeLine(fmt.Sprintf("typedef struct %s %s;", name, name))
+    }
+
+    // Struct definitions
+    for _, stmt := range program.Statements {
+        if s, ok := stmt.(*ast.StructStatement); ok {
+            g.generateStruct(s)
+        }
+    }
+
+    // Function declarations
+    for _, stmt := range program.Statements {
+        if s, ok := stmt.(*ast.FunctionStatement); ok {
+            g.generateFunctionDeclaration(s)
+        }
+    }
+
+    // Function implementations
+    for _, stmt := range program.Statements {
+        if s, ok := stmt.(*ast.FunctionStatement); ok {
+            g.generateFunction(s)
+        }
+    }
+
+    return g.output.String()
+}</code></pre>
+
+    <h2>Type Mapping</h2>
+    <pre><code>func (g *Generator) typeToC(t *ast.TypeAnnotation) string {
+    if t == nil {
+        return "void"
+    }
+
+    var cType string
+    switch t.Name {
+    case "int":
+        cType = "int"
+    case "float":
+        cType = "double"
+    case "string":
+        cType = "h_string"
+    case "char":
+        cType = "char"
+    case "bool":
+        cType = "bool"
+    case "void":
+        cType = "void"
+    default:
+        cType = t.Name // User-defined struct
+    }
+
+    if t.IsPtr {
+        cType = cType + "*"
+    }
+
+    return cType
+}</code></pre>
+
+    <h2>Generating Statements</h2>
+    <pre><code>func (g *Generator) generateStatement(stmt ast.Statement) {
+    switch s := stmt.(type) {
+    case *ast.VarStatement:
+        cType := g.typeToC(s.Type)
+        if s.Value != nil {
+            g.writeLine(fmt.Sprintf("%s %s = %s;",
+                cType, s.Name.Value, g.generateExpression(s.Value)))
+        } else {
+            g.writeLine(fmt.Sprintf("%s %s;", cType, s.Name.Value))
+        }
+
+    case *ast.InferStatement:
+        cType := g.inferType(s.Value)
+        g.writeLine(fmt.Sprintf("%s %s = %s;",
+            cType, s.Name.Value, g.generateExpression(s.Value)))
+
+    case *ast.ReturnStatement:
+        if s.Value != nil {
+            g.writeLine(fmt.Sprintf("return %s;", g.generateExpression(s.Value)))
+        } else {
+            g.writeLine("return;")
+        }
+
+    case *ast.IfStatement:
+        g.writeLine(fmt.Sprintf("if (%s) {", g.generateExpression(s.Condition)))
+        g.indent++
+        g.generateBlock(s.Consequence)
+        g.indent--
+        if s.Alternative != nil {
+            g.writeLine("} else {")
+            g.indent++
+            g.generateBlock(s.Alternative)
+            g.indent--
+        }
+        g.writeLine("}")
+
+    case *ast.FreeStatement:
+        g.writeLine(fmt.Sprintf("free(%s);", g.generateExpression(s.Value)))
+    }
+}</code></pre>
+
+    <h2>Generating Expressions</h2>
+    <pre><code>func (g *Generator) generateExpression(expr ast.Expression) string {
+    switch e := expr.(type) {
+    case *ast.Identifier:
+        return e.Value
+
+    case *ast.IntegerLiteral:
+        return fmt.Sprintf("%d", e.Value)
+
+    case *ast.StringLiteral:
+        return fmt.Sprintf("\"%s\"", e.Value)
+
+    case *ast.BooleanLiteral:
+        if e.Value { return "true" }
+        return "false"
+
+    case *ast.NullLiteral:
+        return "NULL"
+
+    case *ast.PrefixExpression:
+        return fmt.Sprintf("(%s%s)", e.Operator, g.generateExpression(e.Right))
+
+    case *ast.InfixExpression:
+        return fmt.Sprintf("(%s %s %s)",
+            g.generateExpression(e.Left),
+            e.Operator,
+            g.generateExpression(e.Right))
+
+    case *ast.CallExpression:
+        return g.generateCallExpression(e)
+
+    case *ast.MemberExpression:
+        obj := g.generateExpression(e.Object)
+        if g.isPointerExpr(e.Object) {
+            return fmt.Sprintf("%s->%s", obj, e.Member.Value)
+        }
+        return fmt.Sprintf("%s.%s", obj, e.Member.Value)
+
+    case *ast.AllocExpression:
+        return fmt.Sprintf("(%s*)malloc(sizeof(%s))",
+            e.Type.Name, e.Type.Name)
+    }
+    return ""
+}</code></pre>
+
+    <h2>Method Translation</h2>
+    <p>H-lang methods become C functions with the receiver as the first parameter:</p>
+
+    <div class="compare">
+        <div>
+            <h4>H-lang</h4>
+            <pre><code>function (u *User) greet() string {
+    return "Hello, " + u.name;
+}
+
+// Call
+user.greet()</code></pre>
+        </div>
+        <div>
+            <h4>C Output</h4>
+            <pre><code>h_string User_greet(User* u) {
+    return h_string_concat("Hello, ", u->name);
+}
+
+// Call
+User_greet(user)</code></pre>
+        </div>
+    </div>
+
+    <h2>Complete Example</h2>
+    <div class="compare">
+        <div>
+            <h4>H-lang Input</h4>
+            <pre><code>function main() {
+    x := 42;
+    if x > 0 {
+        print(x);
+    }
+}</code></pre>
+        </div>
+        <div>
+            <h4>C Output</h4>
+            <pre><code>#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;stdbool.h&gt;
+
+typedef char* h_string;
+
+void main(void);
+
+void main(void) {
+    int x = 42;
+    if ((x > 0)) {
+        printf("%d\n", x);
+    }
+}</code></pre>
+        </div>
+    </div>
+
+    <h2>Built-in Functions</h2>
+    <pre><code>// Handle built-in print()
+if funcName == "print" {
+    arg := e.Arguments[0]
+    argStr := g.generateExpression(arg)
+    switch arg.(type) {
+    case *ast.StringLiteral:
+        return fmt.Sprintf("printf(\"%%s\\n\", %s)", argStr)
+    case *ast.IntegerLiteral:
+        return fmt.Sprintf("printf(\"%%d\\n\", %s)", argStr)
+    case *ast.FloatLiteral:
+        return fmt.Sprintf("printf(\"%%f\\n\", %s)", argStr)
+    }
+}</code></pre>
+
+    <div class="note">
+        <strong>Key Mappings:</strong>
+        <ul>
+            <li><code>alloc(Type)</code> → <code>(Type*)malloc(sizeof(Type))</code></li>
+            <li><code>free(ptr)</code> → <code>free(ptr)</code></li>
+            <li><code>print(x)</code> → <code>printf(...)</code></li>
+            <li><code>obj.method()</code> → <code>Type_method(obj)</code></li>
+            <li><code>ptr.field</code> → <code>ptr->field</code></li>
+        </ul>
+    </div>
+
+    <nav>
+        <a href="04-parser.html">← Previous: Parser</a>
+        <a href="06-cli.html">Next: CLI →</a>
+    </nav>
+</body>
+</html>
