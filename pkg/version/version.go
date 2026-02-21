@@ -7,7 +7,7 @@ const (
 	Major = 0
 	Minor = 0
 	Patch = 0
-	Build = 334
+	Build = 580
 )
 
 // String returns the version string
