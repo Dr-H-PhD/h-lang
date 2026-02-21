@@ -80,6 +80,7 @@ const (
 	DEFER
 	LEN
 	MAKE
+	RANGE
 
 	// Types
 	TYPE_INT
@@ -151,6 +152,7 @@ var tokenNames = map[TokenType]string{
 	DEFER:        "defer",
 	LEN:          "len",
 	MAKE:         "make",
+	RANGE:        "range",
 	TYPE_INT:     "int",
 	TYPE_FLOAT:   "float",
 	TYPE_STRING:  "string",
@@ -185,6 +187,7 @@ var keywords = map[string]TokenType{
 	"defer":    DEFER,
 	"len":      LEN,
 	"make":     MAKE,
+	"range":    RANGE,
 	"int":      TYPE_INT,
 	"float":    TYPE_FLOAT,
 	"string":   TYPE_STRING,

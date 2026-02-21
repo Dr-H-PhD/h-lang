@@ -665,6 +665,89 @@ function main() {
 	}
 }
 
+func TestForRangeStatement(t *testing.T) {
+	tests := []struct {
+		input       string
+		hasIndex    bool
+		indexName   string
+		hasValue    bool
+		valueName   string
+		iterable    string
+	}{
+		{
+			input:     "for i, v := range arr { print(v); }",
+			hasIndex:  true,
+			indexName: "i",
+			hasValue:  true,
+			valueName: "v",
+			iterable:  "arr",
+		},
+		{
+			input:     "for i := range numbers { print(i); }",
+			hasIndex:  true,
+			indexName: "i",
+			hasValue:  false,
+			iterable:  "numbers",
+		},
+		{
+			input:     "for _, v := range items { print(v); }",
+			hasIndex:  true,
+			indexName: "_",
+			hasValue:  true,
+			valueName: "v",
+			iterable:  "items",
+		},
+	}
+
+	for _, tt := range tests {
+		l := lexer.New(tt.input)
+		p := New(l)
+		program := p.ParseProgram()
+		checkParserErrors(t, p)
+
+		if len(program.Statements) != 1 {
+			t.Fatalf("input=%q: expected 1 statement, got %d", tt.input, len(program.Statements))
+		}
+
+		stmt, ok := program.Statements[0].(*ast.ForRangeStatement)
+		if !ok {
+			t.Fatalf("input=%q: expected ForRangeStatement, got %T", tt.input, program.Statements[0])
+		}
+
+		if tt.hasIndex {
+			if stmt.Index == nil {
+				t.Errorf("input=%q: expected index variable", tt.input)
+			} else if stmt.Index.Value != tt.indexName {
+				t.Errorf("input=%q: expected index %q, got %q", tt.input, tt.indexName, stmt.Index.Value)
+			}
+		} else {
+			if stmt.Index != nil {
+				t.Errorf("input=%q: expected no index variable, got %q", tt.input, stmt.Index.Value)
+			}
+		}
+
+		if tt.hasValue {
+			if stmt.Value == nil {
+				t.Errorf("input=%q: expected value variable", tt.input)
+			} else if stmt.Value.Value != tt.valueName {
+				t.Errorf("input=%q: expected value %q, got %q", tt.input, tt.valueName, stmt.Value.Value)
+			}
+		} else {
+			if stmt.Value != nil {
+				t.Errorf("input=%q: expected no value variable, got %q", tt.input, stmt.Value.Value)
+			}
+		}
+
+		if stmt.Iterable == nil {
+			t.Errorf("input=%q: expected iterable", tt.input)
+		}
+
+		if stmt.Body == nil {
+			t.Errorf("input=%q: expected body", tt.input)
+		}
+	}
+}
+
 func checkParserErrors(t *testing.T, p *Parser) {
 	errors := p.Errors()
 	if len(errors) == 0 {

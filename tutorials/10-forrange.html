@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Building H-lang: For-Range Loops</title>
+    <style>
+        :root { --bg: #0d1117; --fg: #c9d1d9; --accent: #00ADD8; --code-bg: #161b22; --border: #30363d; --green: #10b981; --orange: #f97316; }
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; background: var(--bg); color: var(--fg); line-height: 1.6; max-width: 900px; margin: 0 auto; padding: 2rem; }
+        h1, h2, h3 { color: var(--accent); }
+        h1 { border-bottom: 2px solid var(--border); padding-bottom: 0.5rem; }
+        a { color: var(--accent); }
+        code { background: var(--code-bg); padding: 0.2rem 0.4rem; border-radius: 4px; font-family: 'Consolas', 'Monaco', monospace; }
+        pre { background: var(--code-bg); padding: 1rem; border-radius: 8px; overflow-x: auto; border: 1px solid var(--border); }
+        pre code { padding: 0; background: none; }
+        .note { background: rgba(0, 173, 216, 0.1); border-left: 4px solid var(--accent); padding: 1rem; margin: 1rem 0; border-radius: 0 8px 8px 0; }
+        .warning { background: rgba(249, 115, 22, 0.1); border-left: 4px solid var(--orange); padding: 1rem; margin: 1rem 0; border-radius: 0 8px 8px 0; }
+        .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+        .compare > div { background: var(--code-bg); padding: 1rem; border-radius: 8px; }
+        .compare h4 { margin-top: 0; color: var(--green); }
+        nav { display: flex; justify-content: space-between; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+        nav a { padding: 0.5rem 1rem; background: var(--code-bg); border-radius: 4px; text-decoration: none; }
+        nav a:hover { background: var(--border); }
+        table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+        th, td { border: 1px solid var(--border); padding: 0.5rem; text-align: left; }
+        th { background: var(--code-bg); color: var(--accent); }
+    </style>
+</head>
+<body>
+    <h1>Building H-lang: For-Range Loops</h1>
+    <p><strong>Part 10: Iterating Over Collections</strong></p>
+
+    <h2>Overview</h2>
+    <p>For-range loops provide a clean syntax for iterating over arrays and slices. Instead of manually managing loop indices, you can iterate directly over elements.</p>
+
+    <h2>Syntax Forms</h2>
+    <table>
+        <tr>
+            <th>Form</th>
+            <th>Syntax</th>
+            <th>Description</th>
+        </tr>
+        <tr>
+            <td>Index and Value</td>
+            <td><code>for i, v := range arr</code></td>
+            <td>Get both index and value</td>
+        </tr>
+        <tr>
+            <td>Index Only</td>
+            <td><code>for i := range arr</code></td>
+            <td>Get only the index</td>
+        </tr>
+        <tr>
+            <td>Value Only</td>
+            <td><code>for _, v := range arr</code></td>
+            <td>Ignore index, get value</td>
+        </tr>
+    </table>
+
+    <h2>Implementation Steps</h2>
+
+    <h3>1. Add RANGE Token</h3>
+    <p>First, add the <code>range</code> keyword to the lexer:</p>
+    <pre><code>// token.go - Add to keywords
+const (
+    // ...existing tokens...
+    RANGE
+)
+
+var keywords = map[string]TokenType{
+    // ...existing keywords...
+    "range": RANGE,
+}</code></pre>
+
+    <h3>2. Add ForRangeStatement AST Node</h3>
+    <p>Create a new AST node for for-range statements:</p>
+    <pre><code>// ast.go
+type ForRangeStatement struct {
+    Token    lexer.Token
+    Index    *Identifier  // optional, nil if using _
+    Value    *Identifier  // optional, nil if only index
+    Iterable Expression
+    Body     *BlockStatement
+}</code></pre>
+
+    <h3>3. Update Parser</h3>
+    <p>Modify <code>parseForStatement</code> to detect for-range syntax:</p>
+    <pre><code>func (p *Parser) parseForStatement() ast.Statement {
+    forToken := p.curToken
+    p.nextToken()
+
+    // Check for: for ident := range ...
+    if p.curTokenIs(lexer.IDENT) {
+        firstIdent := p.curToken
+
+        if p.peekTokenIs(lexer.WALRUS) {
+            p.nextToken() // consume :=
+            if p.peekTokenIs(lexer.RANGE) {
+                // Single variable: for i := range arr
+                return p.parseForRangeStatement(forToken, firstIdent, nil)
+            }
+        } else if p.peekTokenIs(lexer.COMMA) {
+            // Two variables: for i, v := range arr
+            p.nextToken() // consume ,
+            p.expectPeek(lexer.IDENT)
+            secondIdent := p.curToken
+            p.expectPeek(lexer.WALRUS)
+            p.expectPeek(lexer.RANGE)
+            return p.parseForRangeStatementBody(forToken, firstIdent, secondIdent)
+        }
+    }
+
+    // Fall back to regular for loop
+    return p.parseRegularForStatement(forToken)
+}</code></pre>
+
+    <h3>4. Generate C Code</h3>
+    <p>Convert for-range to C for loop:</p>
+    <pre><code>func (g *Generator) generateForRangeStatement(s *ast.ForRangeStatement) {
+    iterableExpr := g.generateExpression(s.Iterable)
+
+    // Generate index variable
+    indexVar := "__idx"
+    if s.Index != nil {
+        indexVar = s.Index.Value
+    }
+
+    // C for loop: for (int i = 0; i < len; i++)
+    g.writeLine(fmt.Sprintf(
+        "for (int %s = 0; %s < (sizeof(%s)/sizeof(%s[0])); %s++) {",
+        indexVar, indexVar, iterableExpr, iterableExpr, indexVar))
+    g.indent++
+
+    // Declare value variable if needed
+    if s.Value != nil {
+        elemType := g.inferElementType(s.Iterable)
+        g.writeLine(fmt.Sprintf("%s %s = %s[%s];",
+            elemType, s.Value.Value, iterableExpr, indexVar))
+    }
+
+    g.generateBlock(s.Body)
+    g.indent--
+    g.writeLine("}")
+}</code></pre>
+
+    <h2>Example Usage</h2>
+    <pre><code>function main() {
+    numbers := [5]int{10, 20, 30, 40, 50};
+
+    # Index and value
+    for i, v := range numbers {
+        print(i);   # 0, 1, 2, 3, 4
+        print(v);   # 10, 20, 30, 40, 50
+    }
+
+    # Sum all elements
+    sum := 0;
+    for _, v := range numbers {
+        sum = sum + v;
+    }
+    print(sum);  # 150
+
+    # Count elements
+    count := 0;
+    for i := range numbers {
+        count = i + 1;
+    }
+    print(count);  # 5
+}</code></pre>
+
+    <h2>Generated C Code</h2>
+    <p>The H-lang for-range loop:</p>
+    <pre><code>for i, v := range numbers {
+    print(v);
+}</code></pre>
+    <p>Compiles to:</p>
+    <pre><code>for (int i = 0; i < (sizeof(numbers)/sizeof(numbers[0])); i++) {
+    int v = numbers[i];
+    printf("%d\n", v);
+}</code></pre>
+
+    <div class="note">
+        <strong>Note:</strong> The blank identifier <code>_</code> is valid in H-lang. When used as the index variable, the generated code still creates an internal index variable but doesn't expose it to your code.
+    </div>
+
+    <h2>Common Patterns</h2>
+
+    <h3>Finding Maximum</h3>
+    <pre><code>max := arr[0];
+for _, v := range arr {
+    if v > max {
+        max = v;
+    }
+}
+print(max);</code></pre>
+
+    <h3>Nested Iteration</h3>
+    <pre><code>matrix := [3]int{1, 2, 3};
+total := 0;
+for _, row := range matrix {
+    for _, col := range matrix {
+        total = total + row * col;
+    }
+}
+print(total);  # 36</code></pre>
+
+    <h2>Testing</h2>
+    <p>Add parser tests for all three forms:</p>
+    <pre><code>func TestForRangeStatement(t *testing.T) {
+    tests := []struct {
+        input     string
+        hasIndex  bool
+        hasValue  bool
+    }{
+        {"for i, v := range arr { }", true, true},
+        {"for i := range arr { }", true, false},
+        {"for _, v := range arr { }", true, true},
+    }
+    // ... test implementation
+}</code></pre>
+
+    <h2>Summary</h2>
+    <ul>
+        <li>Added <code>range</code> keyword to lexer</li>
+        <li>Created <code>ForRangeStatement</code> AST node</li>
+        <li>Parser detects for-range vs regular for syntax</li>
+        <li>Codegen converts to C for loop with length calculation</li>
+        <li>Supports index-only, value-only, and both</li>
+    </ul>
+
+    <nav>
+        <a href="09-arrays.html">&larr; Part 9: Arrays</a>
+        <a href="index.html">Index</a>
+    </nav>
+</body>
+</html>

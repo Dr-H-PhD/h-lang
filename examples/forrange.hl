@@ -1,0 +1,54 @@
+# forrange.hl - For-range loop examples
+
+function main() {
+    # Basic for-range with index and value
+    numbers := [5]int{10, 20, 30, 40, 50};
+
+    print(0);  # Separator
+
+    # Iterate with index and value
+    for i, v := range numbers {
+        print(i);
+        print(v);
+    }
+
+    print(0);  # Separator
+
+    # Just index
+    for i := range numbers {
+        print(i);
+    }
+
+    print(0);  # Separator
+
+    # Just value (using _ for unused index)
+    for _, v := range numbers {
+        print(v);
+    }
+
+    print(0);  # Separator
+
+    # Sum all elements
+    sum := 0;
+    for _, v := range numbers {
+        sum = sum + v;
+    }
+    print(sum);  # 150
+
+    # Count elements (using index)
+    count := 0;
+    for i := range numbers {
+        count = i + 1;
+    }
+    print(count);  # 5
+
+    # Nested for-range
+    arr := [3]int{1, 2, 3};
+    total := 0;
+    for _, a := range arr {
+        for _, b := range arr {
+            total = total + a * b;
+        }
+    }
+    print(total);  # 36 = (1+2+3)*(1+2+3)
+}

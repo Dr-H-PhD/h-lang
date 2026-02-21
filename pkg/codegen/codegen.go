@@ -249,6 +249,8 @@ func (g *Generator) generateStatement(stmt ast.Statement) {
 		g.generateForStatement(s)
 	case *ast.WhileStatement:
 		g.generateWhileStatement(s)
+	case *ast.ForRangeStatement:
+		g.generateForRangeStatement(s)
 	case *ast.FreeStatement:
 		g.generateFreeStatement(s)
 	case *ast.DeferStatement:
@@ -376,6 +378,55 @@ func (g *Generator) generateWhileStatement(s *ast.WhileStatement) {
 	g.generateBlock(s.Body)
 	g.indent--
 	g.writeLine("}")
+}
+
+func (g *Generator) generateForRangeStatement(s *ast.ForRangeStatement) {
+	iterableExpr := g.generateExpression(s.Iterable)
+
+	// Generate index variable name (use __idx if no index needed)
+	indexVar := "__idx"
+	if s.Index != nil {
+		indexVar = s.Index.Value
+	}
+
+	// Generate the for loop header
+	// for (int i = 0; i < (sizeof(arr)/sizeof(arr[0])); i++)
+	g.writeLine(fmt.Sprintf("for (int %s = 0; %s < (sizeof(%s)/sizeof(%s[0])); %s++) {",
+		indexVar, indexVar, iterableExpr, iterableExpr, indexVar))
+	g.indent++
+
+	// Record index in symbol table
+	if s.Index != nil {
+		g.variables[s.Index.Value] = "int"
+	}
+
+	// If value variable is needed, declare it at the start of the loop body
+	if s.Value != nil {
+		// Infer element type from the iterable
+		elemType := g.inferElementType(s.Iterable)
+		g.writeLine(fmt.Sprintf("%s %s = %s[%s];", elemType, s.Value.Value, iterableExpr, indexVar))
+		g.variables[s.Value.Value] = elemType
+	}
+
+	g.generateBlock(s.Body)
+	g.indent--
+	g.writeLine("}")
+}
+
+func (g *Generator) inferElementType(expr ast.Expression) string {
+	// Try to get the array type from the variables map
+	if ident, ok := expr.(*ast.Identifier); ok {
+		if varType, exists := g.variables[ident.Value]; exists {
+			// Handle array types like "int[5]" or "int[]" or "int*"
+			varType = strings.TrimSuffix(varType, "*")
+			if idx := strings.Index(varType, "["); idx != -1 {
+				return varType[:idx]
+			}
+			return varType
+		}
+	}
+	// Default to int
+	return "int"
 }
 
 func (g *Generator) generateFreeStatement(s *ast.FreeStatement) {

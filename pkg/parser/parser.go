@@ -536,9 +536,137 @@ func (p *Parser) parseIfStatement() *ast.IfStatement {
 	return stmt
 }
 
-func (p *Parser) parseForStatement() *ast.ForStatement {
-	stmt := &ast.ForStatement{Token: p.curToken}
+func (p *Parser) parseForStatement() ast.Statement {
+	forToken := p.curToken
 	p.nextToken()
+
+	// Check if this is a for-range statement
+	// Pattern: for ident := range ... or for ident, ident := range ...
+	if p.curTokenIs(lexer.IDENT) {
+		firstIdent := p.curToken
+
+		// Check for "ident := range" or "ident, ident := range"
+		if p.peekTokenIs(lexer.WALRUS) {
+			// Single variable: for i := range arr
+			p.nextToken() // consume :=
+			if p.peekTokenIs(lexer.RANGE) {
+				return p.parseForRangeStatement(forToken, &ast.Identifier{Token: firstIdent, Value: firstIdent.Literal}, nil)
+			}
+			// Not a range, fall back to regular for loop
+			// Need to continue parsing as init statement
+			return p.parseForStatementWithInit(forToken, firstIdent)
+		} else if p.peekTokenIs(lexer.COMMA) {
+			// Two variables: for i, v := range arr
+			p.nextToken() // consume ,
+			if !p.expectPeek(lexer.IDENT) {
+				return nil
+			}
+			secondIdent := p.curToken
+			if !p.expectPeek(lexer.WALRUS) {
+				return nil
+			}
+			if !p.expectPeek(lexer.RANGE) {
+				return nil
+			}
+			index := &ast.Identifier{Token: firstIdent, Value: firstIdent.Literal}
+			value := &ast.Identifier{Token: secondIdent, Value: secondIdent.Literal}
+			return p.parseForRangeStatementBody(forToken, index, value)
+		}
+	}
+
+	// Check for blank identifier pattern: for _, v := range arr
+	if p.curTokenIs(lexer.IDENT) && p.curToken.Literal == "_" {
+		if p.peekTokenIs(lexer.COMMA) {
+			p.nextToken() // consume ,
+			if !p.expectPeek(lexer.IDENT) {
+				return nil
+			}
+			secondIdent := p.curToken
+			if !p.expectPeek(lexer.WALRUS) {
+				return nil
+			}
+			if !p.expectPeek(lexer.RANGE) {
+				return nil
+			}
+			value := &ast.Identifier{Token: secondIdent, Value: secondIdent.Literal}
+			return p.parseForRangeStatementBody(forToken, nil, value)
+		}
+	}
+
+	// Regular for loop
+	return p.parseRegularForStatement(forToken)
+}
+
+func (p *Parser) parseForRangeStatement(forToken lexer.Token, firstIdent *ast.Identifier, secondIdent *ast.Identifier) *ast.ForRangeStatement {
+	// We've already consumed "ident :=" and seen RANGE as peek
+	p.nextToken() // consume range
+
+	return p.parseForRangeStatementBody(forToken, firstIdent, secondIdent)
+}
+
+func (p *Parser) parseForRangeStatementBody(forToken lexer.Token, index *ast.Identifier, value *ast.Identifier) *ast.ForRangeStatement {
+	stmt := &ast.ForRangeStatement{
+		Token: forToken,
+		Index: index,
+		Value: value,
+	}
+
+	p.nextToken() // move to iterable
+	stmt.Iterable = p.parseExpression(LOWEST)
+
+	if !p.expectPeek(lexer.LBRACE) {
+		return nil
+	}
+	stmt.Body = p.parseBlockStatement()
+
+	return stmt
+}
+
+func (p *Parser) parseForStatementWithInit(forToken lexer.Token, firstIdent lexer.Token) *ast.ForStatement {
+	// We've consumed "for ident :=" and it's not a range
+	// Parse the rest as infer statement init
+	stmt := &ast.ForStatement{Token: forToken}
+
+	initStmt := &ast.InferStatement{Token: firstIdent}
+	initStmt.Name = &ast.Identifier{Token: firstIdent, Value: firstIdent.Literal}
+
+	p.nextToken() // move past :=
+	initStmt.Value = p.parseExpression(LOWEST)
+	stmt.Init = initStmt
+
+	if p.peekTokenIs(lexer.SEMICOLON) {
+		p.nextToken()
+	}
+	if p.curTokenIs(lexer.SEMICOLON) {
+		p.nextToken()
+	}
+
+	// Condition
+	if !p.curTokenIs(lexer.SEMICOLON) {
+		stmt.Condition = p.parseExpression(LOWEST)
+	}
+	if !p.expectPeek(lexer.SEMICOLON) {
+		return nil
+	}
+	p.nextToken()
+
+	// Post
+	if !p.curTokenIs(lexer.LBRACE) {
+		stmt.Post = p.parseStatement()
+	}
+
+	if !p.curTokenIs(lexer.LBRACE) {
+		if !p.expectPeek(lexer.LBRACE) {
+			return nil
+		}
+	}
+	stmt.Body = p.parseBlockStatement()
+
+	return stmt
+}
+
+func (p *Parser) parseRegularForStatement(forToken lexer.Token) *ast.ForStatement {
+	stmt := &ast.ForStatement{Token: forToken}
 
 	// Init
 	if !p.curTokenIs(lexer.SEMICOLON) {

@@ -395,6 +395,37 @@ func (ws *WhileStatement) String() string {
 	return "while " + ws.Condition.String() + " " + ws.Body.String()
 }
 
+// ForRangeStatement: for i, v := range arr { ... }
+type ForRangeStatement struct {
+	Token      lexer.Token
+	Index      *Identifier // optional, can be nil if using _
+	Value      *Identifier // optional, can be nil if only index
+	Iterable   Expression
+	Body       *BlockStatement
+}
+
+func (frs *ForRangeStatement) statementNode()       {}
+func (frs *ForRangeStatement) TokenLiteral() string { return frs.Token.Literal }
+func (frs *ForRangeStatement) String() string {
+	var out bytes.Buffer
+	out.WriteString("for ")
+	if frs.Index != nil {
+		out.WriteString(frs.Index.String())
+		if frs.Value != nil {
+			out.WriteString(", ")
+			out.WriteString(frs.Value.String())
+		}
+	} else if frs.Value != nil {
+		out.WriteString("_, ")
+		out.WriteString(frs.Value.String())
+	}
+	out.WriteString(" := range ")
+	out.WriteString(frs.Iterable.String())
+	out.WriteString(" ")
+	out.WriteString(frs.Body.String())
+	return out.String()
+}
+
 // PrefixExpression: -x, !x, &x, *x
 type PrefixExpression struct {
 	Token    lexer.Token
