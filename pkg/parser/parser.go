@@ -92,6 +92,7 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerPrefix(lexer.ALLOC, p.parseAllocExpression)
 	p.registerPrefix(lexer.LEN, p.parseLenExpression)
 	p.registerPrefix(lexer.MAKE, p.parseMakeExpression)
+	p.registerPrefix(lexer.MAP, p.parseMapLiteral)
 
 	p.infixParseFns = make(map[lexer.TokenType]infixParseFn)
 	p.registerInfix(lexer.PLUS, p.parseInfixExpression)
@@ -233,6 +234,10 @@ func (p *Parser) parseStatement() ast.Statement {
 		return p.parseBreakStatement()
 	case lexer.CONTINUE:
 		return p.parseContinueStatement()
+	case lexer.ENUM:
+		return p.parseEnumStatement(false)
+	case lexer.DELETE:
+		return p.parseDeleteStatement()
 	case lexer.IDENT:
 		if p.peekTokenIs(lexer.WALRUS) {
 			return p.parseInferStatement()
@@ -251,6 +256,8 @@ func (p *Parser) parsePublicStatement() ast.Statement {
 		return p.parseFunctionStatement(true)
 	case lexer.STRUCT:
 		return p.parseStructStatement(true)
+	case lexer.ENUM:
+		return p.parseEnumStatement(true)
 	default:
 		p.errors = append(p.errors, fmt.Sprintf("line %d: unexpected token after 'public': %s",
 			p.curToken.Line, p.curToken.Type))
@@ -355,6 +362,22 @@ func (p *Parser) parseTypeAnnotation() *ast.TypeAnnotation {
 		p.nextToken()
 	}
 
+	// Check for map type: map[KeyType]ValueType
+	if p.curTokenIs(lexer.MAP) {
+		typeAnn.IsMap = true
+		if !p.expectPeek(lexer.LBRACKET) {
+			return nil
+		}
+		p.nextToken() // move to key type
+		typeAnn.KeyType = p.parseTypeAnnotation()
+		if !p.expectPeek(lexer.RBRACKET) {
+			return nil
+		}
+		p.nextToken() // move to value type
+		typeAnn.ValueType = p.parseTypeAnnotation()
+		return typeAnn
+	}
+
 	// Check for array/slice
 	if p.curTokenIs(lexer.LBRACKET) {
 		p.nextToken()
@@ -416,6 +439,52 @@ func (p *Parser) parseStructFields() []*ast.StructField {
 
 	p.nextToken() // consume }
 	return fields
+}
+
+func (p *Parser) parseEnumStatement(public bool) *ast.EnumStatement {
+	stmt := &ast.EnumStatement{Token: p.curToken, Public: public}
+
+	if !p.expectPeek(lexer.IDENT) {
+		return nil
+	}
+	stmt.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+
+	if !p.expectPeek(lexer.LBRACE) {
+		return nil
+	}
+
+	stmt.Values = p.parseEnumValues()
+
+	return stmt
+}
+
+func (p *Parser) parseEnumValues() []*ast.EnumValue {
+	values := []*ast.EnumValue{}
+
+	for !p.peekTokenIs(lexer.RBRACE) && !p.peekTokenIs(lexer.EOF) {
+		p.nextToken()
+
+		value := &ast.EnumValue{
+			Name: &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal},
+		}
+
+		// Check for explicit value: Red = 1
+		if p.peekTokenIs(lexer.ASSIGN) {
+			p.nextToken() // consume =
+			p.nextToken() // move to value
+			value.Value = p.parseExpression(LOWEST)
+		}
+
+		values = append(values, value)
+
+		// Expect comma or closing brace
+		if p.peekTokenIs(lexer.COMMA) {
+			p.nextToken()
+		}
+	}
+
+	p.nextToken() // consume }
+	return values
 }
 
 func (p *Parser) parseBlockStatement() *ast.BlockStatement {
@@ -1148,4 +1217,104 @@ func (p *Parser) parseAllocExpression() ast.Expression {
 	}
 
 	return exp
+}
+
+func (p *Parser) parseMapLiteral() ast.Expression {
+	ml := &ast.MapLiteral{Token: p.curToken}
+
+	// Parse type: map[KeyType]ValueType
+	ml.Type = &ast.TypeAnnotation{Token: p.curToken, IsMap: true}
+
+	if !p.expectPeek(lexer.LBRACKET) {
+		return nil
+	}
+	p.nextToken() // move to key type
+	ml.Type.KeyType = p.parseTypeAnnotation()
+
+	if !p.expectPeek(lexer.RBRACKET) {
+		return nil
+	}
+	p.nextToken() // move to value type
+	ml.Type.ValueType = p.parseTypeAnnotation()
+
+	// Parse the literal body { key: value, ... }
+	if !p.expectPeek(lexer.LBRACE) {
+		return nil
+	}
+
+	ml.Pairs = p.parseMapPairs()
+
+	return ml
+}
+
+func (p *Parser) parseMapPairs() []*ast.MapPair {
+	pairs := []*ast.MapPair{}
+
+	if p.peekTokenIs(lexer.RBRACE) {
+		p.nextToken()
+		return pairs
+	}
+
+	p.nextToken()
+
+	pair := &ast.MapPair{}
+	pair.Key = p.parseExpression(LOWEST)
+
+	if !p.expectPeek(lexer.COLON) {
+		return nil
+	}
+	p.nextToken()
+
+	pair.Value = p.parseExpression(LOWEST)
+	pairs = append(pairs, pair)
+
+	for p.peekTokenIs(lexer.COMMA) {
+		p.nextToken() // comma
+		p.nextToken() // next key
+
+		pair := &ast.MapPair{}
+		pair.Key = p.parseExpression(LOWEST)
+
+		if !p.expectPeek(lexer.COLON) {
+			return nil
+		}
+		p.nextToken()
+
+		pair.Value = p.parseExpression(LOWEST)
+		pairs = append(pairs, pair)
+	}
+
+	if !p.expectPeek(lexer.RBRACE) {
+		return nil
+	}
+
+	return pairs
+}
+
+func (p *Parser) parseDeleteStatement() *ast.DeleteStatement {
+	stmt := &ast.DeleteStatement{Token: p.curToken}
+
+	if !p.expectPeek(lexer.LPAREN) {
+		return nil
+	}
+	p.nextToken()
+
+	stmt.Map = p.parseExpression(LOWEST)
+
+	if !p.expectPeek(lexer.COMMA) {
+		return nil
+	}
+	p.nextToken()
+
+	stmt.Key = p.parseExpression(LOWEST)
+
+	if !p.expectPeek(lexer.RPAREN) {
+		return nil
+	}
+
+	if p.peekTokenIs(lexer.SEMICOLON) {
+		p.nextToken()
+	}
+
+	return stmt
 }

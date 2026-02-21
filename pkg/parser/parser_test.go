@@ -784,6 +784,222 @@ func TestContinueStatement(t *testing.T) {
 	}
 }
 
+func TestEnumStatement(t *testing.T) {
+	input := `enum Color {
+    Red,
+    Green,
+    Blue
+}`
+
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+
+	stmt, ok := program.Statements[0].(*ast.EnumStatement)
+	if !ok {
+		t.Fatalf("expected EnumStatement, got %T", program.Statements[0])
+	}
+
+	if stmt.Public {
+		t.Error("expected non-public enum")
+	}
+
+	if stmt.Name.Value != "Color" {
+		t.Errorf("name: expected 'Color', got %q", stmt.Name.Value)
+	}
+
+	if len(stmt.Values) != 3 {
+		t.Fatalf("expected 3 values, got %d", len(stmt.Values))
+	}
+
+	expectedValues := []string{"Red", "Green", "Blue"}
+	for i, expected := range expectedValues {
+		if stmt.Values[i].Name.Value != expected {
+			t.Errorf("value %d: expected %q, got %q", i, expected, stmt.Values[i].Name.Value)
+		}
+		if stmt.Values[i].Value != nil {
+			t.Errorf("value %d: expected no explicit value", i)
+		}
+	}
+}
+
+func TestEnumStatementWithExplicitValues(t *testing.T) {
+	input := `enum Status {
+    Pending = 0,
+    Active = 1,
+    Completed = 2,
+    Cancelled = 100
+}`
+
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	stmt := program.Statements[0].(*ast.EnumStatement)
+
+	if len(stmt.Values) != 4 {
+		t.Fatalf("expected 4 values, got %d", len(stmt.Values))
+	}
+
+	// Check explicit values
+	if stmt.Values[0].Value == nil {
+		t.Error("expected explicit value for Pending")
+	}
+	if stmt.Values[3].Name.Value != "Cancelled" {
+		t.Errorf("expected 'Cancelled', got %q", stmt.Values[3].Name.Value)
+	}
+	if stmt.Values[3].Value == nil {
+		t.Error("expected explicit value for Cancelled")
+	}
+}
+
+func TestPublicEnumStatement(t *testing.T) {
+	input := `public enum Priority {
+    Low,
+    Medium,
+    High
+}`
+
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	stmt := program.Statements[0].(*ast.EnumStatement)
+
+	if !stmt.Public {
+		t.Error("expected public enum")
+	}
+
+	if stmt.Name.Value != "Priority" {
+		t.Errorf("name: expected 'Priority', got %q", stmt.Name.Value)
+	}
+}
+
+func TestMapLiteral(t *testing.T) {
+	input := `ages := map[string]int{"Alice": 30, "Bob": 25};`
+
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+
+	stmt, ok := program.Statements[0].(*ast.InferStatement)
+	if !ok {
+		t.Fatalf("expected InferStatement, got %T", program.Statements[0])
+	}
+
+	if stmt.Name.Value != "ages" {
+		t.Errorf("name: expected 'ages', got %q", stmt.Name.Value)
+	}
+
+	ml, ok := stmt.Value.(*ast.MapLiteral)
+	if !ok {
+		t.Fatalf("expected MapLiteral, got %T", stmt.Value)
+	}
+
+	if !ml.Type.IsMap {
+		t.Error("expected type.IsMap to be true")
+	}
+
+	if ml.Type.KeyType.Name != "string" {
+		t.Errorf("key type: expected 'string', got %q", ml.Type.KeyType.Name)
+	}
+
+	if ml.Type.ValueType.Name != "int" {
+		t.Errorf("value type: expected 'int', got %q", ml.Type.ValueType.Name)
+	}
+
+	if len(ml.Pairs) != 2 {
+		t.Errorf("expected 2 pairs, got %d", len(ml.Pairs))
+	}
+}
+
+func TestEmptyMapLiteral(t *testing.T) {
+	input := `data := map[string]int{};`
+
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	stmt := program.Statements[0].(*ast.InferStatement)
+	ml := stmt.Value.(*ast.MapLiteral)
+
+	if len(ml.Pairs) != 0 {
+		t.Errorf("expected 0 pairs, got %d", len(ml.Pairs))
+	}
+}
+
+func TestDeleteStatement(t *testing.T) {
+	input := `delete(ages, "Alice");`
+
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+
+	stmt, ok := program.Statements[0].(*ast.DeleteStatement)
+	if !ok {
+		t.Fatalf("expected DeleteStatement, got %T", program.Statements[0])
+	}
+
+	mapIdent, ok := stmt.Map.(*ast.Identifier)
+	if !ok {
+		t.Fatalf("expected Identifier for map, got %T", stmt.Map)
+	}
+
+	if mapIdent.Value != "ages" {
+		t.Errorf("map name: expected 'ages', got %q", mapIdent.Value)
+	}
+
+	keyLit, ok := stmt.Key.(*ast.StringLiteral)
+	if !ok {
+		t.Fatalf("expected StringLiteral for key, got %T", stmt.Key)
+	}
+
+	if keyLit.Value != "Alice" {
+		t.Errorf("key: expected 'Alice', got %q", keyLit.Value)
+	}
+}
+
+func TestMapTypeAnnotation(t *testing.T) {
+	input := `var scores map[string]int;`
+
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	stmt := program.Statements[0].(*ast.VarStatement)
+
+	if !stmt.Type.IsMap {
+		t.Error("expected type.IsMap to be true")
+	}
+
+	if stmt.Type.KeyType.Name != "string" {
+		t.Errorf("key type: expected 'string', got %q", stmt.Type.KeyType.Name)
+	}
+
+	if stmt.Type.ValueType.Name != "int" {
+		t.Errorf("value type: expected 'int', got %q", stmt.Type.ValueType.Name)
+	}
+}
+
 func checkParserErrors(t *testing.T, p *Parser) {
 	errors := p.Errors()
 	if len(errors) == 0 {

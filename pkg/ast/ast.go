@@ -116,16 +116,26 @@ func (nl *NullLiteral) String() string       { return "null" }
 
 // TypeAnnotation represents a type
 type TypeAnnotation struct {
-	Token    lexer.Token
-	Name     string
-	IsPtr    bool // true if *Type
-	ArrayLen int  // -1 for slice, 0 for non-array, >0 for fixed array
+	Token     lexer.Token
+	Name      string
+	IsPtr     bool // true if *Type
+	ArrayLen  int  // -1 for slice, 0 for non-array, >0 for fixed array
+	IsMap     bool // true if map[K]V
+	KeyType   *TypeAnnotation
+	ValueType *TypeAnnotation
 }
 
 func (t *TypeAnnotation) String() string {
 	var out bytes.Buffer
 	if t.IsPtr {
 		out.WriteString("*")
+	}
+	if t.IsMap {
+		out.WriteString("map[")
+		out.WriteString(t.KeyType.String())
+		out.WriteString("]")
+		out.WriteString(t.ValueType.String())
+		return out.String()
 	}
 	if t.ArrayLen == -1 {
 		out.WriteString("[]")
@@ -328,6 +338,49 @@ func (ss *StructStatement) String() string {
 			out.WriteString("  ")
 		}
 		out.WriteString(f.Name.String() + " " + f.Type.String() + ";\n")
+	}
+
+	out.WriteString("}")
+	return out.String()
+}
+
+// EnumValue represents a value in an enum
+type EnumValue struct {
+	Name  *Identifier
+	Value Expression // optional explicit value
+}
+
+// EnumStatement: enum Color { Red, Green, Blue }
+type EnumStatement struct {
+	Token  lexer.Token
+	Public bool
+	Name   *Identifier
+	Values []*EnumValue
+}
+
+func (es *EnumStatement) statementNode()       {}
+func (es *EnumStatement) TokenLiteral() string { return es.Token.Literal }
+func (es *EnumStatement) String() string {
+	var out bytes.Buffer
+
+	if es.Public {
+		out.WriteString("public ")
+	}
+	out.WriteString("enum ")
+	out.WriteString(es.Name.String())
+	out.WriteString(" {\n")
+
+	for i, v := range es.Values {
+		out.WriteString("  ")
+		out.WriteString(v.Name.String())
+		if v.Value != nil {
+			out.WriteString(" = ")
+			out.WriteString(v.Value.String())
+		}
+		if i < len(es.Values)-1 {
+			out.WriteString(",")
+		}
+		out.WriteString("\n")
 	}
 
 	out.WriteString("}")
@@ -618,6 +671,49 @@ func (al *ArrayLiteral) String() string {
 	out.WriteString(strings.Join(elems, ", "))
 	out.WriteString("}")
 	return out.String()
+}
+
+// MapPair represents a key-value pair in a map literal
+type MapPair struct {
+	Key   Expression
+	Value Expression
+}
+
+// MapLiteral: map[string]int{"a": 1, "b": 2}
+type MapLiteral struct {
+	Token lexer.Token
+	Type  *TypeAnnotation
+	Pairs []*MapPair
+}
+
+func (ml *MapLiteral) expressionNode()      {}
+func (ml *MapLiteral) TokenLiteral() string { return ml.Token.Literal }
+func (ml *MapLiteral) String() string {
+	var out bytes.Buffer
+	if ml.Type != nil {
+		out.WriteString(ml.Type.String())
+	}
+	out.WriteString("{")
+	pairs := []string{}
+	for _, p := range ml.Pairs {
+		pairs = append(pairs, p.Key.String()+": "+p.Value.String())
+	}
+	out.WriteString(strings.Join(pairs, ", "))
+	out.WriteString("}")
+	return out.String()
+}
+
+// DeleteStatement: delete(map, key);
+type DeleteStatement struct {
+	Token lexer.Token
+	Map   Expression
+	Key   Expression
+}
+
+func (ds *DeleteStatement) statementNode()       {}
+func (ds *DeleteStatement) TokenLiteral() string { return ds.Token.Literal }
+func (ds *DeleteStatement) String() string {
+	return "delete(" + ds.Map.String() + ", " + ds.Key.String() + ");"
 }
 
 // MakeExpression: make([]int, 10) or make([]int, 10, 20)
