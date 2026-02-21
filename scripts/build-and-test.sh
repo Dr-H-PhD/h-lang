@@ -1,6 +1,6 @@
 #!/bin/bash
 # build-and-test.sh - Rebuild project and run all tests
-# Increments patch version on each execution
+# Increments patch version by the number of passing tests
 
 set -e
 
@@ -16,18 +16,6 @@ GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-# Extract current patch version and increment it
-CURRENT_PATCH=$(grep -oP 'Patch = \K[0-9]+' "$VERSION_FILE")
-NEW_PATCH=$((CURRENT_PATCH + 1))
-
-# Format version string with leading zeros (e.g., 0.0.004)
-NEW_VERSION_STR=$(printf "0.0.%03d" "$NEW_PATCH")
-
-# Update version.go
-sed -i "s/Patch = $CURRENT_PATCH/Patch = $NEW_PATCH/" "$VERSION_FILE"
-sed -i "s/return \"0.0.[0-9]*\"/return \"$NEW_VERSION_STR\"/" "$VERSION_FILE"
-
-echo -e "${BLUE}[INFO]${NC} Version incremented: 0.0.$(printf "%03d" $CURRENT_PATCH) -> $NEW_VERSION_STR"
 echo -e "${BLUE}[INFO]${NC} Build started at $(date '+%Y-%m-%d %H:%M:%S')"
 echo ""
 
@@ -51,14 +39,18 @@ go build -o hlc ./cmd/hlc
 echo -e "${GREEN}[PASS]${NC} Compiler built successfully"
 echo ""
 
-# Step 5: Run unit tests
+# Step 5: Run unit tests and count them
 echo -e "${BLUE}[INFO]${NC} Running unit tests..."
-go test ./... 2>&1
-echo -e "${GREEN}[PASS]${NC} All unit tests passed"
+TEST_OUTPUT=$(go test -v ./... 2>&1)
+echo "$TEST_OUTPUT" | grep -E "^(ok|PASS|FAIL|\?)"
+
+# Count passing tests
+UNIT_TESTS=$(echo "$TEST_OUTPUT" | grep -c "^--- PASS" || echo "0")
+echo -e "${GREEN}[PASS]${NC} Unit tests passed: $UNIT_TESTS"
 echo ""
 
-# Step 6: Compile all examples
-echo -e "${BLUE}[INFO]${NC} Compiling example programs..."
+# Step 6: Compile all examples (integration tests)
+echo -e "${BLUE}[INFO]${NC} Compiling example programs (integration tests)..."
 EXAMPLES_PASS=0
 
 for f in examples/*.hl; do
@@ -73,18 +65,39 @@ for f in examples/*.hl; do
     fi
 done
 
-echo -e "${GREEN}[PASS]${NC} All examples compiled ($EXAMPLES_PASS examples)"
+echo -e "${GREEN}[PASS]${NC} Integration tests passed: $EXAMPLES_PASS"
 echo ""
 
-# Step 7: Show version
+# Calculate total tests
+TOTAL_TESTS=$((UNIT_TESTS + EXAMPLES_PASS))
+
+# Step 7: Increment version by total number of tests
+CURRENT_PATCH=$(grep -oP 'Patch = \K[0-9]+' "$VERSION_FILE")
+NEW_PATCH=$((CURRENT_PATCH + TOTAL_TESTS))
+
+# Format version string with leading zeros (e.g., 0.0.004)
+NEW_VERSION_STR=$(printf "0.0.%03d" "$NEW_PATCH")
+
+# Update version.go
+sed -i "s/Patch = $CURRENT_PATCH/Patch = $NEW_PATCH/" "$VERSION_FILE"
+sed -i "s/return \"0.0.[0-9]*\"/return \"$NEW_VERSION_STR\"/" "$VERSION_FILE"
+
+# Rebuild with new version
+echo -e "${BLUE}[INFO]${NC} Rebuilding with new version..."
+go build -o hlc ./cmd/hlc
+
+# Step 8: Show version
 VERSION=$(./hlc --version 2>/dev/null | head -1)
-echo -e "${BLUE}[INFO]${NC} Compiler version: $VERSION"
 echo ""
 
 # Summary
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo -e "${GREEN}[PASS]${NC} Build completed successfully"
-echo "  Version:   $NEW_VERSION_STR"
-echo "  Examples:  $EXAMPLES_PASS compiled"
+echo ""
+echo "  Unit tests:        $UNIT_TESTS"
+echo "  Integration tests: $EXAMPLES_PASS"
+echo "  Total tests:       $TOTAL_TESTS"
+echo ""
+echo "  Version:   0.0.$(printf "%03d" $CURRENT_PATCH) -> $NEW_VERSION_STR (+$TOTAL_TESTS)"
 echo "  Binary:    $(ls -lh hlc | awk '{print $5}')"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
