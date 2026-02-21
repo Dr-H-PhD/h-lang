@@ -141,18 +141,23 @@ function main() {
     x := 42;
     const PI := 3.14159;
 
-    user := alloc(User);
-    user.name = "Achraf";
-
-    if user != null {
-        print(user.greet());
+    # Arrays and for-range
+    nums := [5]int{1, 2, 3, 4, 5};
+    for i, v := range nums {
+        print(v);
     }
 
+    # Heap allocation with defer cleanup
+    user := alloc(User);
+    defer free(user);  # Runs at function exit
+
+    user.name = "Achraf";
+    print(user.greet());
+
+    # Classic for loop
     for i := 0; i < 10; i++ {
         print(i);
     }
-
-    free(user);
 }</code></pre>
 
     <footer style="margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border); color: #8b949e; text-align: center;">
