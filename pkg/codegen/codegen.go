@@ -10,12 +10,12 @@ import (
 
 // Generator generates C code from H-lang AST
 type Generator struct {
-	output         bytes.Buffer
-	indent         int
-	structs        map[string]*ast.StructStatement
-	functions      map[string]*ast.FunctionStatement
-	variables      map[string]string // variable name -> type (e.g., "User*", "int")
-	deferredStmts  []ast.Statement   // Stack of deferred statements
+	output        bytes.Buffer
+	indent        int
+	structs       map[string]*ast.StructStatement
+	functions     map[string]*ast.FunctionStatement
+	variables     map[string]string // variable name -> type (e.g., "User*", "int")
+	deferredStmts []ast.Statement   // Stack of deferred statements
 }
 
 // New creates a new code generator

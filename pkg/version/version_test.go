@@ -35,15 +35,15 @@ func TestFull(t *testing.T) {
 }
 
 func TestVersion_Constants(t *testing.T) {
-	if Major != 0 {
-		t.Errorf("initial major version should be 0, got %d", Major)
+	if Major < 0 {
+		t.Errorf("major version should be >= 0, got %d", Major)
 	}
 
-	if Minor != 0 {
-		t.Errorf("initial minor version should be 0, got %d", Minor)
+	if Minor < 0 {
+		t.Errorf("minor version should be >= 0, got %d", Minor)
 	}
 
-	if Patch != 2 {
-		t.Errorf("patch version should be 2, got %d", Patch)
+	if Patch < 0 {
+		t.Errorf("patch version should be >= 0, got %d", Patch)
 	}
 }

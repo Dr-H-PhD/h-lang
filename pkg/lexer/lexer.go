@@ -100,15 +100,11 @@ func (l *Lexer) NextToken() Token {
 			// Single-line comment
 			tok.Type = COMMENT
 			tok.Literal = l.readLineComment()
-			tok.Line = tok.Line
-			tok.Column = tok.Column
 			return tok
 		} else if l.peekChar() == '*' {
 			// Multi-line comment
 			tok.Type = COMMENT
 			tok.Literal = l.readBlockComment()
-			tok.Line = tok.Line
-			tok.Column = tok.Column
 			return tok
 		} else if l.peekChar() == '=' {
 			l.readChar()

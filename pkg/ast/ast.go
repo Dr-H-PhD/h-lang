@@ -118,8 +118,8 @@ func (nl *NullLiteral) String() string       { return "null" }
 type TypeAnnotation struct {
 	Token    lexer.Token
 	Name     string
-	IsPtr    bool   // true if *Type
-	ArrayLen int    // -1 for slice, 0 for non-array, >0 for fixed array
+	IsPtr    bool // true if *Type
+	ArrayLen int  // -1 for slice, 0 for non-array, >0 for fixed array
 }
 
 func (t *TypeAnnotation) String() string {
@@ -397,11 +397,11 @@ func (ws *WhileStatement) String() string {
 
 // ForRangeStatement: for i, v := range arr { ... }
 type ForRangeStatement struct {
-	Token      lexer.Token
-	Index      *Identifier // optional, can be nil if using _
-	Value      *Identifier // optional, can be nil if only index
-	Iterable   Expression
-	Body       *BlockStatement
+	Token    lexer.Token
+	Index    *Identifier // optional, can be nil if using _
+	Value    *Identifier // optional, can be nil if only index
+	Iterable Expression
+	Body     *BlockStatement
 }
 
 func (frs *ForRangeStatement) statementNode()       {}

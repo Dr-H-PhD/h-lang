@@ -667,12 +667,12 @@ function main() {
 
 func TestForRangeStatement(t *testing.T) {
 	tests := []struct {
-		input       string
-		hasIndex    bool
-		indexName   string
-		hasValue    bool
-		valueName   string
-		iterable    string
+		input     string
+		hasIndex  bool
+		indexName string
+		hasValue  bool
+		valueName string
+		iterable  string
 	}{
 		{
 			input:     "for i, v := range arr { print(v); }",
