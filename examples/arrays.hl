@@ -1,0 +1,60 @@
+# arrays.hl - Demonstrating arrays and slices in H-lang
+
+function main() {
+    # Fixed-size array with type
+    arr := [5]int{1, 2, 3, 4, 5};
+
+    # Access elements
+    first := arr[0];
+    print(first);
+
+    # Modify elements
+    arr[2] = 100;
+    print(arr[2]);
+
+    # Array length
+    size := len(arr);
+    print(size);
+
+    # Iterate with for loop
+    for i := 0; i < 5; i++ {
+        print(arr[i]);
+    }
+
+    # Slice (dynamic array) with initial values
+    nums := []int{10, 20, 30};
+    print(nums[0]);
+
+    # Create slice with make
+    buffer := make([]int, 10);
+    buffer[0] = 42;
+    print(buffer[0]);
+
+    # Don't forget to free dynamic allocations
+    free(buffer);
+
+    # Sum array elements
+    sum := 0;
+    for i := 0; i < 5; i++ {
+        sum = sum + arr[i];
+    }
+    print(sum);
+}
+
+# Array as function parameter
+function sumArray(arr *int, length int) int {
+    total := 0;
+    for i := 0; i < length; i++ {
+        total = total + arr[i];
+    }
+    return total;
+}
+
+# Return pointer to dynamically allocated array
+function createArray(size int) *int {
+    arr := make([]int, size);
+    for i := 0; i < size; i++ {
+        arr[i] = i * 2;
+    }
+    return arr;
+}
