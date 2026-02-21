@@ -1,12 +1,12 @@
 #!/bin/bash
 # build-and-test.sh - Rebuild project and run all tests
-# Increments build number on each execution
+# Increments patch version on each execution
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-BUILD_FILE="$PROJECT_ROOT/.build-number"
+VERSION_FILE="$PROJECT_ROOT/pkg/version/version.go"
 
 cd "$PROJECT_ROOT"
 
@@ -16,18 +16,19 @@ GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-# Read current build number or initialise
-if [ -f "$BUILD_FILE" ]; then
-    BUILD_NUM=$(cat "$BUILD_FILE")
-else
-    BUILD_NUM=0
-fi
+# Extract current patch version and increment it
+CURRENT_PATCH=$(grep -oP 'Patch = \K[0-9]+' "$VERSION_FILE")
+NEW_PATCH=$((CURRENT_PATCH + 1))
 
-# Increment build number
-BUILD_NUM=$((BUILD_NUM + 1))
-echo "$BUILD_NUM" > "$BUILD_FILE"
+# Format version string with leading zeros (e.g., 0.0.004)
+NEW_VERSION_STR=$(printf "0.0.%03d" "$NEW_PATCH")
 
-echo -e "${BLUE}[INFO]${NC} Build #$BUILD_NUM started at $(date '+%Y-%m-%d %H:%M:%S')"
+# Update version.go
+sed -i "s/Patch = $CURRENT_PATCH/Patch = $NEW_PATCH/" "$VERSION_FILE"
+sed -i "s/return \"0.0.[0-9]*\"/return \"$NEW_VERSION_STR\"/" "$VERSION_FILE"
+
+echo -e "${BLUE}[INFO]${NC} Version incremented: 0.0.$(printf "%03d" $CURRENT_PATCH) -> $NEW_VERSION_STR"
+echo -e "${BLUE}[INFO]${NC} Build started at $(date '+%Y-%m-%d %H:%M:%S')"
 echo ""
 
 # Step 1: Clean
@@ -82,7 +83,8 @@ echo ""
 
 # Summary
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo -e "${GREEN}[PASS]${NC} Build #$BUILD_NUM completed successfully"
+echo -e "${GREEN}[PASS]${NC} Build completed successfully"
+echo "  Version:   $NEW_VERSION_STR"
 echo "  Examples:  $EXAMPLES_PASS compiled"
 echo "  Binary:    $(ls -lh hlc | awk '{print $5}')"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
