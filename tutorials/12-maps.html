@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Building H-lang: Maps</title>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --fg: #c9d1d9;
+            --accent: #00ADD8;
+            --code-bg: #161b22;
+            --border: #30363d;
+            --green: #10b981;
+            --orange: #f97316;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--fg);
+            line-height: 1.6;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        h1, h2, h3 { color: var(--accent); }
+        h1 { border-bottom: 2px solid var(--border); padding-bottom: 0.5rem; }
+        a { color: var(--accent); }
+        code {
+            background: var(--code-bg);
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            font-family: 'Consolas', 'Monaco', monospace;
+        }
+        pre {
+            background: var(--code-bg);
+            padding: 1rem;
+            border-radius: 8px;
+            overflow-x: auto;
+            border: 1px solid var(--border);
+        }
+        pre code { padding: 0; background: none; }
+        .note {
+            background: rgba(0, 173, 216, 0.1);
+            border-left: 4px solid var(--accent);
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 0 8px 8px 0;
+        }
+        .warning {
+            background: rgba(249, 115, 22, 0.1);
+            border-left: 4px solid var(--orange);
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 0 8px 8px 0;
+        }
+        .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+        .compare > div { background: var(--code-bg); padding: 1rem; border-radius: 8px; }
+        .compare h4 { margin-top: 0; color: var(--green); }
+        nav {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 2rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--border);
+        }
+        nav a {
+            padding: 0.5rem 1rem;
+            background: var(--code-bg);
+            border-radius: 4px;
+            text-decoration: none;
+        }
+        nav a:hover { background: var(--border); }
+        table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+        th, td { border: 1px solid var(--border); padding: 0.5rem; text-align: left; }
+        th { background: var(--code-bg); color: var(--accent); }
+    </style>
+</head>
+<body>
+    <h1>Building H-lang: Maps</h1>
+    <p><strong>Part 12: Hash Maps (Dictionaries)</strong></p>
+
+    <h2>Overview</h2>
+    <p>Maps are key-value data structures that provide O(1) average-case lookup. H-lang maps use string keys and are implemented as hash tables in C.</p>
+
+    <h2>Syntax</h2>
+    <table>
+        <tr>
+            <th>Operation</th>
+            <th>Syntax</th>
+            <th>Example</th>
+        </tr>
+        <tr>
+            <td>Map Literal</td>
+            <td><code>map[K]V{...}</code></td>
+            <td><code>ages := map[string]int{"Alice": 30};</code></td>
+        </tr>
+        <tr>
+            <td>Empty Map</td>
+            <td><code>map[K]V{}</code></td>
+            <td><code>data := map[string]int{};</code></td>
+        </tr>
+        <tr>
+            <td>Get Value</td>
+            <td><code>m[key]</code></td>
+            <td><code>age := ages["Alice"];</code></td>
+        </tr>
+        <tr>
+            <td>Set Value</td>
+            <td><code>m[key] = value</code></td>
+            <td><code>ages["Bob"] = 25;</code></td>
+        </tr>
+        <tr>
+            <td>Delete Key</td>
+            <td><code>delete(m, key)</code></td>
+            <td><code>delete(ages, "Alice");</code></td>
+        </tr>
+        <tr>
+            <td>Length</td>
+            <td><code>len(m)</code></td>
+            <td><code>count := len(ages);</code></td>
+        </tr>
+        <tr>
+            <td>Free</td>
+            <td><code>free(m)</code></td>
+            <td><code>free(ages);</code></td>
+        </tr>
+    </table>
+
+    <h2>Basic Usage</h2>
+    <pre><code># Create a map with initial values
+ages := map[string]int{
+    "Alice": 30,
+    "Bob": 25,
+    "Charlie": 35
+};
+
+# Access values
+print(ages["Alice"]);   # 30
+
+# Modify values
+ages["Bob"] = 26;
+
+# Add new entries
+ages["Diana"] = 28;
+
+# Get map size
+print(len(ages));       # 4
+
+# Delete entries
+delete(ages, "Charlie");
+
+# IMPORTANT: Free when done!
+free(ages);</code></pre>
+
+    <div class="warning">
+        <strong>Memory Management:</strong> Maps are heap-allocated. You must call <code>free()</code> when done to avoid memory leaks!
+    </div>
+
+    <h2>Implementation</h2>
+
+    <h3>Step 1: Add Tokens</h3>
+    <pre><code>// pkg/lexer/token.go
+const (
+    // ... existing tokens ...
+    MAP     // map
+    DELETE  // delete
+)
+
+var keywords = map[string]TokenType{
+    // ... existing keywords ...
+    "map":    MAP,
+    "delete": DELETE,
+}</code></pre>
+
+    <h3>Step 2: Update AST</h3>
+    <pre><code>// pkg/ast/ast.go
+
+// TypeAnnotation - add map support
+type TypeAnnotation struct {
+    Token     lexer.Token
+    Name      string
+    IsPtr     bool
+    ArrayLen  int
+    IsMap     bool              // true for map types
+    KeyType   *TypeAnnotation   // map key type
+    ValueType *TypeAnnotation   // map value type
+}
+
+// MapPair represents a key-value pair
+type MapPair struct {
+    Key   Expression
+    Value Expression
+}
+
+// MapLiteral: map[string]int{"a": 1, "b": 2}
+type MapLiteral struct {
+    Token lexer.Token
+    Type  *TypeAnnotation
+    Pairs []*MapPair
+}
+
+func (ml *MapLiteral) expressionNode()      {}
+func (ml *MapLiteral) TokenLiteral() string { return ml.Token.Literal }
+func (ml *MapLiteral) String() string {
+    var out bytes.Buffer
+    if ml.Type != nil {
+        out.WriteString(ml.Type.String())
+    }
+    out.WriteString("{")
+    var pairs []string
+    for _, p := range ml.Pairs {
+        pairs = append(pairs, p.Key.String()+": "+p.Value.String())
+    }
+    out.WriteString(strings.Join(pairs, ", "))
+    out.WriteString("}")
+    return out.String()
+}
+
+// DeleteStatement: delete(map, key);
+type DeleteStatement struct {
+    Token lexer.Token
+    Map   Expression
+    Key   Expression
+}
+
+func (ds *DeleteStatement) statementNode()       {}
+func (ds *DeleteStatement) TokenLiteral() string { return ds.Token.Literal }
+func (ds *DeleteStatement) String() string {
+    return "delete(" + ds.Map.String() + ", " + ds.Key.String() + ");"
+}</code></pre>
+
+    <h3>Step 3: Update Parser</h3>
+    <pre><code>// pkg/parser/parser.go
+
+// Register prefix parsers
+p.registerPrefix(lexer.MAP, p.parseMapLiteral)
+
+// Handle delete as statement
+case lexer.DELETE:
+    return p.parseDeleteStatement()
+
+func (p *Parser) parseMapLiteral() ast.Expression {
+    ml := &ast.MapLiteral{Token: p.curToken}
+    ml.Type = &ast.TypeAnnotation{Token: p.curToken, IsMap: true}
+
+    p.expectPeek(lexer.LBRACKET)  // [
+    p.nextToken()
+    ml.Type.KeyType = p.parseTypeAnnotation()
+
+    p.expectPeek(lexer.RBRACKET)  // ]
+    p.nextToken()
+    ml.Type.ValueType = p.parseTypeAnnotation()
+
+    p.expectPeek(lexer.LBRACE)    // {
+    ml.Pairs = p.parseMapPairs()
+
+    return ml
+}
+
+func (p *Parser) parseMapPairs() []*ast.MapPair {
+    var pairs []*ast.MapPair
+
+    if p.peekTokenIs(lexer.RBRACE) {
+        p.nextToken()
+        return pairs
+    }
+
+    for {
+        p.nextToken()
+        key := p.parseExpression(LOWEST)
+
+        p.expectPeek(lexer.COLON)
+        p.nextToken()
+        value := p.parseExpression(LOWEST)
+
+        pairs = append(pairs, &ast.MapPair{Key: key, Value: value})
+
+        if !p.peekTokenIs(lexer.COMMA) {
+            break
+        }
+        p.nextToken()
+    }
+
+    p.expectPeek(lexer.RBRACE)
+    return pairs
+}
+
+func (p *Parser) parseDeleteStatement() *ast.DeleteStatement {
+    stmt := &ast.DeleteStatement{Token: p.curToken}
+
+    p.expectPeek(lexer.LPAREN)
+    p.nextToken()
+    stmt.Map = p.parseExpression(LOWEST)
+
+    p.expectPeek(lexer.COMMA)
+    p.nextToken()
+    stmt.Key = p.parseExpression(LOWEST)
+
+    p.expectPeek(lexer.RPAREN)
+    p.expectPeek(lexer.SEMICOLON)
+
+    return stmt
+}</code></pre>
+
+    <h3>Step 4: Update Code Generator</h3>
+    <pre><code>// pkg/codegen/codegen.go
+
+// Detect map usage and generate helpers
+func (g *Generator) checkForMaps(program *ast.Program) {
+    for _, stmt := range program.Statements {
+        if g.statementUsesMap(stmt) {
+            g.usesMap = true
+            return
+        }
+    }
+}
+
+// Generate C hash map implementation
+func (g *Generator) generateMapHelpers() {
+    g.writeLine("// Hash map implementation")
+    g.writeLine("#define H_MAP_SIZE 256")
+    g.writeLine("")
+    g.writeLine("typedef struct h_map_entry {")
+    g.writeLine("    char* key;")
+    g.writeLine("    void* value;")
+    g.writeLine("    struct h_map_entry* next;")
+    g.writeLine("} h_map_entry;")
+    // ... hash function, h_map_new, h_map_set, h_map_get, etc.
+}
+
+// Handle map literals
+func (g *Generator) generateInferStatement(s *ast.InferStatement) {
+    if ml, ok := s.Value.(*ast.MapLiteral); ok {
+        g.variables[s.Name.Value] = "h_map*"
+        g.writeLine(fmt.Sprintf("h_map* %s = h_map_new();", s.Name.Value))
+        for _, pair := range ml.Pairs {
+            keyExpr := g.generateExpression(pair.Key)
+            valueExpr := g.generateExpression(pair.Value)
+            g.writeLine(fmt.Sprintf("h_map_set(%s, %s, (void*)(intptr_t)%s);",
+                s.Name.Value, keyExpr, valueExpr))
+        }
+        return
+    }
+    // ... rest of function
+}
+
+// Handle map indexing
+case *ast.IndexExpression:
+    if ident, ok := e.Left.(*ast.Identifier); ok {
+        if varType, exists := g.variables[ident.Value]; exists && varType == "h_map*" {
+            return fmt.Sprintf("(int)(intptr_t)h_map_get(%s, %s)",
+                ident.Value, g.generateExpression(e.Index))
+        }
+    }
+    return fmt.Sprintf("%s[%s]", ...)
+
+// Handle map assignment
+case *ast.AssignExpression:
+    if idx, ok := e.Left.(*ast.IndexExpression); ok {
+        if ident, ok := idx.Left.(*ast.Identifier); ok {
+            if varType, exists := g.variables[ident.Value]; exists && varType == "h_map*" {
+                return fmt.Sprintf("h_map_set(%s, %s, (void*)(intptr_t)%s)",
+                    ident.Value, g.generateExpression(idx.Index), g.generateExpression(e.Value))
+            }
+        }
+    }
+    // ... rest
+
+// Handle delete
+func (g *Generator) generateDeleteStatement(s *ast.DeleteStatement) {
+    mapExpr := g.generateExpression(s.Map)
+    keyExpr := g.generateExpression(s.Key)
+    g.writeLine(fmt.Sprintf("h_map_delete(%s, %s);", mapExpr, keyExpr))
+}</code></pre>
+
+    <h2>Generated C Code</h2>
+    <div class="compare">
+        <div>
+            <h4>H-lang</h4>
+            <pre><code>function main() {
+    ages := map[string]int{
+        "Alice": 30,
+        "Bob": 25
+    };
+    print(ages["Alice"]);
+    ages["Charlie"] = 35;
+    delete(ages, "Bob");
+    print(len(ages));
+    free(ages);
+}</code></pre>
+        </div>
+        <div>
+            <h4>Generated C</h4>
+            <pre><code>void main(void) {
+    h_map* ages = h_map_new();
+    h_map_set(ages, "Alice",
+        (void*)(intptr_t)30);
+    h_map_set(ages, "Bob",
+        (void*)(intptr_t)25);
+    printf("%d\n",
+        (int)(intptr_t)h_map_get(
+            ages, "Alice"));
+    h_map_set(ages, "Charlie",
+        (void*)(intptr_t)35);
+    h_map_delete(ages, "Bob");
+    printf("%d\n", h_map_len(ages));
+    h_map_free(ages);
+}</code></pre>
+        </div>
+    </div>
+
+    <h2>Common Patterns</h2>
+
+    <h3>Word Counter</h3>
+    <pre><code>function countWords() {
+    counts := map[string]int{};
+
+    # Count occurrences
+    counts["hello"] = counts["hello"] + 1;
+    counts["world"] = counts["world"] + 1;
+    counts["hello"] = counts["hello"] + 1;
+
+    print(counts["hello"]);  # 2
+    print(counts["world"]);  # 1
+
+    free(counts);
+}</code></pre>
+
+    <h3>Configuration Store</h3>
+    <pre><code>function getConfig() {
+    config := map[string]int{
+        "port": 8080,
+        "timeout": 30,
+        "maxRetries": 3
+    };
+
+    return config;
+}
+
+function main() {
+    cfg := getConfig();
+    print(cfg["port"]);
+    free(cfg);
+}</code></pre>
+
+    <div class="note">
+        <strong>Implementation Note:</strong> The current map implementation uses string keys only. Values are stored as void pointers, which means integer values are cast through <code>intptr_t</code>. For string values, you would need to allocate and copy the strings.
+    </div>
+
+    <h2>Limitations</h2>
+    <ul>
+        <li>String keys only (no integer or custom type keys)</li>
+        <li>Integer values only (strings need manual handling)</li>
+        <li>No iteration over map entries</li>
+        <li>No existence check (missing key returns 0)</li>
+        <li>Fixed hash table size (256 buckets)</li>
+    </ul>
+
+    <h2>Testing</h2>
+    <pre><code>func TestMapLiteral(t *testing.T) {
+    input := `ages := map[string]int{"Alice": 30, "Bob": 25};`
+
+    l := lexer.New(input)
+    p := parser.New(l)
+    program := p.ParseProgram()
+
+    stmt := program.Statements[0].(*ast.InferStatement)
+    ml := stmt.Value.(*ast.MapLiteral)
+
+    if !ml.Type.IsMap {
+        t.Error("expected IsMap to be true")
+    }
+    if len(ml.Pairs) != 2 {
+        t.Errorf("expected 2 pairs, got %d", len(ml.Pairs))
+    }
+}</code></pre>
+
+    <h2>Summary</h2>
+    <ul>
+        <li><code>map[K]V{...}</code> - Create a map with initial values</li>
+        <li><code>map[K]V{}</code> - Create an empty map</li>
+        <li><code>m[key]</code> - Get value by key</li>
+        <li><code>m[key] = value</code> - Set value by key</li>
+        <li><code>delete(m, key)</code> - Remove a key</li>
+        <li><code>len(m)</code> - Get number of entries</li>
+        <li><strong>Always <code>free()</code> maps when done!</strong></li>
+    </ul>
+
+    <nav>
+        <a href="11-enums.html">&larr; Previous: Enums</a>
+        <a href="index.html">Back to Index</a>
+    </nav>
+</body>
+</html>

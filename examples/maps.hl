@@ -1,0 +1,39 @@
+# Maps Example
+# Demonstrates hash maps in H-lang
+
+function main() {
+    # Create a map with initial values
+    ages := map[string]int{
+        "Alice": 30,
+        "Bob": 25,
+        "Charlie": 35
+    };
+
+    # Access map values
+    print(ages["Alice"]);   # 30
+    print(ages["Bob"]);     # 25
+
+    # Modify existing value
+    ages["Bob"] = 26;
+    print(ages["Bob"]);     # 26
+
+    # Add new entry
+    ages["Diana"] = 28;
+
+    # Get map size
+    print(len(ages));       # 4
+
+    # Delete an entry
+    delete(ages, "Charlie");
+    print(len(ages));       # 3
+
+    # Create an empty map
+    scores := map[string]int{};
+    scores["math"] = 95;
+    scores["physics"] = 88;
+    print(len(scores));     # 2
+
+    # Free the maps (important!)
+    free(ages);
+    free(scores);
+}
