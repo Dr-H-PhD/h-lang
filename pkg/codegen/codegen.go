@@ -14,7 +14,8 @@ type Generator struct {
 	indent         int
 	structs        map[string]*ast.StructStatement
 	functions      map[string]*ast.FunctionStatement
-	deferredStmts  []ast.Statement // Stack of deferred statements
+	variables      map[string]string // variable name -> type (e.g., "User*", "int")
+	deferredStmts  []ast.Statement   // Stack of deferred statements
 }
 
 // New creates a new code generator
@@ -22,6 +23,7 @@ func New() *Generator {
 	return &Generator{
 		structs:   make(map[string]*ast.StructStatement),
 		functions: make(map[string]*ast.FunctionStatement),
+		variables: make(map[string]string),
 	}
 }
 
@@ -46,6 +48,19 @@ func (g *Generator) Generate(program *ast.Program) string {
 
 	// Generate type definitions for strings
 	g.writeLine("typedef char* h_string;")
+	g.writeLine("")
+
+	// Generate string concatenation helper
+	g.writeLine("h_string h_string_concat(h_string a, h_string b) {")
+	g.indent++
+	g.writeLine("size_t len_a = strlen(a);")
+	g.writeLine("size_t len_b = strlen(b);")
+	g.writeLine("h_string result = (h_string)malloc(len_a + len_b + 1);")
+	g.writeLine("memcpy(result, a, len_a);")
+	g.writeLine("memcpy(result + len_a, b, len_b + 1);")
+	g.writeLine("return result;")
+	g.indent--
+	g.writeLine("}")
 	g.writeLine("")
 
 	// Generate struct forward declarations
@@ -146,8 +161,21 @@ func (g *Generator) generateFunction(f *ast.FunctionStatement) {
 	g.writeLine(fmt.Sprintf("%s %s(%s) {", returnType, funcName, params))
 	g.indent++
 
-	// Clear deferred statements for this function
+	// Clear deferred statements and variable scope for this function
 	g.deferredStmts = nil
+	g.variables = make(map[string]string)
+
+	// Record receiver in symbol table
+	if f.Receiver != nil {
+		cType := g.typeToC(f.Receiver.Type)
+		g.variables[f.Receiver.Name.Value] = cType
+	}
+
+	// Record parameters in symbol table
+	for _, p := range f.Parameters {
+		cType := g.typeToC(p.Type)
+		g.variables[p.Name.Value] = cType
+	}
 
 	g.generateBlock(f.Body)
 
@@ -237,6 +265,8 @@ func (g *Generator) generateDeferStatement(s *ast.DeferStatement) {
 
 func (g *Generator) generateVarStatement(s *ast.VarStatement) {
 	cType := g.typeToC(s.Type)
+	// Record variable type in symbol table
+	g.variables[s.Name.Value] = cType
 	if s.Value != nil {
 		g.writeLine(fmt.Sprintf("%s %s = %s;", cType, s.Name.Value, g.generateExpression(s.Value)))
 	} else {
@@ -256,13 +286,16 @@ func (g *Generator) generateInferStatement(s *ast.InferStatement) {
 		elemType := g.typeToC(&ast.TypeAnnotation{Name: arr.Type.Name})
 		if arr.Type.ArrayLen > 0 {
 			// Fixed array: int arr[5] = {1, 2, 3, 4, 5};
+			g.variables[s.Name.Value] = fmt.Sprintf("%s[%d]", elemType, arr.Type.ArrayLen)
 			g.writeLine(fmt.Sprintf("%s %s[%d] = %s;", elemType, s.Name.Value, arr.Type.ArrayLen, g.generateExpression(s.Value)))
 		} else {
 			// Slice (dynamic array): int* arr = (int*)malloc(...);
 			numElems := len(arr.Elements)
 			if numElems > 0 {
+				g.variables[s.Name.Value] = elemType + "[]"
 				g.writeLine(fmt.Sprintf("%s %s[] = %s;", elemType, s.Name.Value, g.generateExpression(s.Value)))
 			} else {
+				g.variables[s.Name.Value] = elemType + "*"
 				g.writeLine(fmt.Sprintf("%s* %s = NULL;", elemType, s.Name.Value))
 			}
 		}
@@ -272,11 +305,14 @@ func (g *Generator) generateInferStatement(s *ast.InferStatement) {
 	// Special handling for make expressions
 	if mk, ok := s.Value.(*ast.MakeExpression); ok {
 		elemType := g.typeToC(&ast.TypeAnnotation{Name: mk.Type.Name})
+		g.variables[s.Name.Value] = elemType + "*"
 		g.writeLine(fmt.Sprintf("%s* %s = %s;", elemType, s.Name.Value, g.generateExpression(s.Value)))
 		return
 	}
 
 	cType := g.inferType(s.Value)
+	// Record variable type in symbol table
+	g.variables[s.Name.Value] = cType
 	g.writeLine(fmt.Sprintf("%s %s = %s;", cType, s.Name.Value, g.generateExpression(s.Value)))
 }
 
@@ -438,13 +474,29 @@ func (g *Generator) generateCallExpression(e *ast.CallExpression) string {
 		if len(e.Arguments) > 0 {
 			arg := e.Arguments[0]
 			argStr := g.generateExpression(arg)
-			switch arg.(type) {
+			switch a := arg.(type) {
 			case *ast.StringLiteral:
 				return fmt.Sprintf("printf(\"%%s\\n\", %s)", argStr)
 			case *ast.IntegerLiteral:
 				return fmt.Sprintf("printf(\"%%d\\n\", %s)", argStr)
 			case *ast.FloatLiteral:
 				return fmt.Sprintf("printf(\"%%f\\n\", %s)", argStr)
+			case *ast.BooleanLiteral:
+				return fmt.Sprintf("printf(\"%%s\\n\", %s ? \"true\" : \"false\")", argStr)
+			case *ast.CallExpression:
+				// Check return type of called function
+				if g.getCallReturnType(a) == "h_string" {
+					return fmt.Sprintf("printf(\"%%s\\n\", %s)", argStr)
+				}
+				return fmt.Sprintf("printf(\"%%d\\n\", %s)", argStr)
+			case *ast.Identifier:
+				// Check variable type
+				if varType, ok := g.variables[a.Value]; ok {
+					if varType == "h_string" {
+						return fmt.Sprintf("printf(\"%%s\\n\", %s)", argStr)
+					}
+				}
+				return fmt.Sprintf("printf(\"%%d\\n\", %s)", argStr)
 			default:
 				// Default to %d for most expressions
 				return fmt.Sprintf("printf(\"%%d\\n\", %s)", argStr)
@@ -580,12 +632,23 @@ func (g *Generator) isStringExpr(expr ast.Expression) bool {
 func (g *Generator) isPointerExpr(expr ast.Expression) bool {
 	switch e := expr.(type) {
 	case *ast.Identifier:
-		// TODO: look up in symbol table
+		// Look up in symbol table
+		if varType, ok := g.variables[e.Value]; ok {
+			return strings.HasSuffix(varType, "*")
+		}
 		return false
 	case *ast.AllocExpression:
 		return true
 	case *ast.PrefixExpression:
 		return e.Operator == "&"
+	case *ast.CallExpression:
+		// Check if function returns a pointer
+		if ident, ok := e.Function.(*ast.Identifier); ok {
+			if fn, exists := g.functions[ident.Value]; exists && fn.ReturnType != nil {
+				return fn.ReturnType.IsPtr
+			}
+		}
+		return false
 	}
 	return false
 }
@@ -593,10 +656,53 @@ func (g *Generator) isPointerExpr(expr ast.Expression) bool {
 func (g *Generator) getExprType(expr ast.Expression) string {
 	switch e := expr.(type) {
 	case *ast.Identifier:
-		// TODO: proper symbol table lookup
+		// Look up in symbol table and extract base type
+		if varType, ok := g.variables[e.Value]; ok {
+			// Remove pointer suffix to get base type
+			baseType := strings.TrimSuffix(varType, "*")
+			return baseType
+		}
 		return "Unknown"
 	case *ast.AllocExpression:
 		return e.Type.Name
+	case *ast.CallExpression:
+		// Check if function returns a struct type
+		if ident, ok := e.Function.(*ast.Identifier); ok {
+			if fn, exists := g.functions[ident.Value]; exists && fn.ReturnType != nil {
+				return fn.ReturnType.Name
+			}
+		}
+		return "Unknown"
 	}
 	return "Unknown"
+}
+
+func (g *Generator) getCallReturnType(e *ast.CallExpression) string {
+	// Check for method call (obj.method())
+	if member, ok := e.Function.(*ast.MemberExpression); ok {
+		methodName := member.Member.Value
+		// Get the struct type of the object
+		structName := g.getExprType(member.Object)
+
+		// Look for method with matching name and receiver type
+		for _, fn := range g.functions {
+			if fn.Name.Value == methodName && fn.Receiver != nil && fn.ReturnType != nil {
+				// Check if receiver type matches
+				receiverType := fn.Receiver.Type.Name
+				if fn.Receiver.Type.IsPtr {
+					receiverType = strings.TrimPrefix(receiverType, "*")
+				}
+				if receiverType == structName {
+					return g.typeToC(fn.ReturnType)
+				}
+			}
+		}
+	}
+	// Check for regular function call
+	if ident, ok := e.Function.(*ast.Identifier); ok {
+		if fn, exists := g.functions[ident.Value]; exists && fn.ReturnType != nil {
+			return g.typeToC(fn.ReturnType)
+		}
+	}
+	return "int"
 }
