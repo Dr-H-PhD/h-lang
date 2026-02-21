@@ -11,9 +11,8 @@ import (
 	"github.com/Dr-H-PhD/h-lang/pkg/codegen"
 	"github.com/Dr-H-PhD/h-lang/pkg/lexer"
 	"github.com/Dr-H-PhD/h-lang/pkg/parser"
+	"github.com/Dr-H-PhD/h-lang/pkg/version"
 )
-
-const version = "0.1.0"
 
 func main() {
 	// Flags
@@ -26,7 +25,7 @@ func main() {
 	flag.Parse()
 
 	if *versionFlag {
-		fmt.Printf("H-lang compiler (hlc) version %s\n", version)
+		fmt.Println(version.Full())
 		os.Exit(0)
 	}
 
