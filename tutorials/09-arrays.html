@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Building H-lang: Arrays &amp; Slices</title>
+    <style>
+        :root { --bg: #0d1117; --fg: #c9d1d9; --accent: #00ADD8; --code-bg: #161b22; --border: #30363d; --green: #10b981; --orange: #f97316; }
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; background: var(--bg); color: var(--fg); line-height: 1.6; max-width: 900px; margin: 0 auto; padding: 2rem; }
+        h1, h2, h3 { color: var(--accent); }
+        h1 { border-bottom: 2px solid var(--border); padding-bottom: 0.5rem; }
+        a { color: var(--accent); }
+        code { background: var(--code-bg); padding: 0.2rem 0.4rem; border-radius: 4px; font-family: 'Consolas', 'Monaco', monospace; }
+        pre { background: var(--code-bg); padding: 1rem; border-radius: 8px; overflow-x: auto; border: 1px solid var(--border); }
+        pre code { padding: 0; background: none; }
+        .note { background: rgba(0, 173, 216, 0.1); border-left: 4px solid var(--accent); padding: 1rem; margin: 1rem 0; border-radius: 0 8px 8px 0; }
+        .warning { background: rgba(249, 115, 22, 0.1); border-left: 4px solid var(--orange); padding: 1rem; margin: 1rem 0; border-radius: 0 8px 8px 0; }
+        .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+        .compare > div { background: var(--code-bg); padding: 1rem; border-radius: 8px; }
+        .compare h4 { margin-top: 0; color: var(--green); }
+        nav { display: flex; justify-content: space-between; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+        nav a { padding: 0.5rem 1rem; background: var(--code-bg); border-radius: 4px; text-decoration: none; }
+        nav a:hover { background: var(--border); }
+        table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+        th, td { border: 1px solid var(--border); padding: 0.5rem; text-align: left; }
+        th { background: var(--code-bg); color: var(--accent); }
+    </style>
+</head>
+<body>
+    <h1>Building H-lang: Arrays &amp; Slices</h1>
+    <p><strong>Part 9: Fixed Arrays and Dynamic Slices</strong></p>
+
+    <h2>Overview</h2>
+    <p>H-lang supports two types of sequential collections:</p>
+    <ul>
+        <li><strong>Fixed Arrays</strong> — Compile-time size, stack allocated</li>
+        <li><strong>Slices</strong> — Dynamic size, heap allocated</li>
+    </ul>
+
+    <h2>Syntax</h2>
+    <table>
+        <tr>
+            <th>Type</th>
+            <th>Syntax</th>
+            <th>Example</th>
+        </tr>
+        <tr>
+            <td>Fixed Array</td>
+            <td><code>[N]type{...}</code></td>
+            <td><code>arr := [5]int{1, 2, 3, 4, 5};</code></td>
+        </tr>
+        <tr>
+            <td>Slice Literal</td>
+            <td><code>[]type{...}</code></td>
+            <td><code>nums := []int{10, 20, 30};</code></td>
+        </tr>
+        <tr>
+            <td>Make Slice</td>
+            <td><code>make([]type, len)</code></td>
+            <td><code>buf := make([]int, 100);</code></td>
+        </tr>
+        <tr>
+            <td>Length</td>
+            <td><code>len(arr)</code></td>
+            <td><code>size := len(arr);</code></td>
+        </tr>
+        <tr>
+            <td>Index</td>
+            <td><code>arr[i]</code></td>
+            <td><code>x := arr[0];</code></td>
+        </tr>
+    </table>
+
+    <h2>Fixed Arrays</h2>
+    <p>Fixed arrays have a compile-time known size and are allocated on the stack:</p>
+
+    <pre><code># Declare and initialize a fixed array
+arr := [5]int{1, 2, 3, 4, 5};
+
+# Access elements (0-indexed)
+first := arr[0];   # 1
+last := arr[4];    # 5
+
+# Modify elements
+arr[2] = 100;
+
+# Get length
+size := len(arr);  # 5
+
+# Iterate
+for i := 0; i < len(arr); i++ {
+    print(arr[i]);
+}</code></pre>
+
+    <h2>Slices (Dynamic Arrays)</h2>
+    <p>Slices can grow and shrink at runtime. They're heap-allocated:</p>
+
+    <pre><code># Slice with initial values
+nums := []int{10, 20, 30};
+
+# Create slice with make (heap allocated)
+buffer := make([]int, 100);
+
+# Use like array
+buffer[0] = 42;
+print(buffer[0]);
+
+# IMPORTANT: Free when done!
+free(buffer);</code></pre>
+
+    <div class="warning">
+        <strong>Memory Management:</strong> Slices created with <code>make()</code> are heap-allocated. You must <code>free()</code> them when done to avoid memory leaks!
+    </div>
+
+    <h2>Implementation</h2>
+
+    <h3>Step 1: Add Tokens</h3>
+    <pre><code>// pkg/lexer/token.go
+const (
+    // ... existing tokens ...
+    LEN   // len
+    MAKE  // make
+)
+
+var keywords = map[string]TokenType{
+    // ... existing keywords ...
+    "len":  LEN,
+    "make": MAKE,
+}</code></pre>
+
+    <h3>Step 2: Update AST</h3>
+    <pre><code>// pkg/ast/ast.go
+
+// TypeAnnotation already has ArrayLen field:
+// ArrayLen: -1 for slice, 0 for non-array, >0 for fixed
+
+// ArrayLiteral already exists but update for typed arrays
+type ArrayLiteral struct {
+    Token    lexer.Token
+    Type     *TypeAnnotation  // [5]int or []int
+    Elements []Expression
+}
+
+// Add MakeExpression for make([]int, 10)
+type MakeExpression struct {
+    Token    lexer.Token
+    Type     *TypeAnnotation
+    Length   Expression
+    Capacity Expression  // optional
+}
+
+func (me *MakeExpression) expressionNode()      {}
+func (me *MakeExpression) TokenLiteral() string { return me.Token.Literal }
+func (me *MakeExpression) String() string {
+    var out bytes.Buffer
+    out.WriteString("make(")
+    out.WriteString(me.Type.String())
+    if me.Length != nil {
+        out.WriteString(", ")
+        out.WriteString(me.Length.String())
+    }
+    out.WriteString(")")
+    return out.String()
+}</code></pre>
+
+    <h3>Step 3: Update Parser</h3>
+    <pre><code>// pkg/parser/parser.go
+
+// Register prefix parsers
+p.registerPrefix(lexer.LBRACKET, p.parseArrayOrSliceLiteral)
+p.registerPrefix(lexer.LEN, p.parseLenExpression)
+p.registerPrefix(lexer.MAKE, p.parseMakeExpression)
+
+func (p *Parser) parseArrayOrSliceLiteral() ast.Expression {
+    array := &ast.ArrayLiteral{Token: p.curToken}
+    p.nextToken() // move past [
+
+    if p.curTokenIs(lexer.RBRACKET) {
+        // Slice: []type{...}
+        p.nextToken()
+        if p.curTokenIs(lexer.IDENT) || p.isType() {
+            array.Type = &ast.TypeAnnotation{
+                Name:     p.curToken.Literal,
+                ArrayLen: -1, // slice marker
+            }
+            p.nextToken()
+            if p.curTokenIs(lexer.LBRACE) {
+                array.Elements = p.parseExpressionListBrace()
+            }
+        }
+        return array
+    } else if p.curTokenIs(lexer.INT) {
+        // Fixed array: [5]type{...}
+        length, _ := strconv.Atoi(p.curToken.Literal)
+        p.nextToken() // past number
+        p.nextToken() // past ]
+        array.Type = &ast.TypeAnnotation{
+            Name:     p.curToken.Literal,
+            ArrayLen: length,
+        }
+        p.nextToken()
+        if p.curTokenIs(lexer.LBRACE) {
+            array.Elements = p.parseExpressionListBrace()
+        }
+        return array
+    }
+
+    // Untyped: [1, 2, 3]
+    // ... parse elements ...
+    return array
+}
+
+func (p *Parser) parseMakeExpression() ast.Expression {
+    exp := &ast.MakeExpression{Token: p.curToken}
+    p.expectPeek(lexer.LPAREN)
+    p.nextToken()
+    exp.Type = p.parseTypeAnnotation()
+    if p.peekTokenIs(lexer.COMMA) {
+        p.nextToken()
+        p.nextToken()
+        exp.Length = p.parseExpression(LOWEST)
+    }
+    p.expectPeek(lexer.RPAREN)
+    return exp
+}</code></pre>
+
+    <h3>Step 4: Update Code Generator</h3>
+    <pre><code>// pkg/codegen/codegen.go
+
+func (g *Generator) generateInferStatement(s *ast.InferStatement) {
+    // Special handling for array literals
+    if arr, ok := s.Value.(*ast.ArrayLiteral); ok && arr.Type != nil {
+        elemType := g.typeToC(&ast.TypeAnnotation{Name: arr.Type.Name})
+        if arr.Type.ArrayLen > 0 {
+            // Fixed: int arr[5] = {1, 2, 3, 4, 5};
+            g.writeLine(fmt.Sprintf("%s %s[%d] = %s;",
+                elemType, s.Name.Value, arr.Type.ArrayLen,
+                g.generateExpression(s.Value)))
+        } else {
+            // Slice: int nums[] = {10, 20, 30};
+            g.writeLine(fmt.Sprintf("%s %s[] = %s;",
+                elemType, s.Name.Value,
+                g.generateExpression(s.Value)))
+        }
+        return
+    }
+
+    // Handle make()
+    if mk, ok := s.Value.(*ast.MakeExpression); ok {
+        elemType := g.typeToC(&ast.TypeAnnotation{Name: mk.Type.Name})
+        g.writeLine(fmt.Sprintf("%s* %s = %s;",
+            elemType, s.Name.Value,
+            g.generateExpression(s.Value)))
+        return
+    }
+    // ... rest of function
+}
+
+// Handle len() in generateCallExpression
+if funcName == "len" {
+    if len(e.Arguments) > 0 {
+        argStr := g.generateExpression(e.Arguments[0])
+        return fmt.Sprintf("(sizeof(%s)/sizeof(%s[0]))", argStr, argStr)
+    }
+}
+
+// Handle make() expression
+func (g *Generator) generateMakeExpression(e *ast.MakeExpression) string {
+    elemType := g.typeToC(&ast.TypeAnnotation{Name: e.Type.Name})
+    length := g.generateExpression(e.Length)
+    return fmt.Sprintf("(%s*)calloc(%s, sizeof(%s))",
+        elemType, length, elemType)
+}</code></pre>
+
+    <h2>Generated C Code</h2>
+    <div class="compare">
+        <div>
+            <h4>H-lang</h4>
+            <pre><code>function main() {
+    # Fixed array
+    arr := [5]int{1, 2, 3, 4, 5};
+    print(arr[0]);
+    print(len(arr));
+
+    # Dynamic slice
+    buf := make([]int, 10);
+    buf[0] = 42;
+    free(buf);
+}</code></pre>
+        </div>
+        <div>
+            <h4>Generated C</h4>
+            <pre><code>void main(void) {
+    // Fixed array
+    int arr[5] = {1, 2, 3, 4, 5};
+    printf("%d\n", arr[0]);
+    printf("%d\n",
+        (sizeof(arr)/sizeof(arr[0])));
+
+    // Dynamic slice
+    int* buf = (int*)calloc(10,
+        sizeof(int));
+    buf[0] = 42;
+    free(buf);
+}</code></pre>
+        </div>
+    </div>
+
+    <h2>Common Patterns</h2>
+
+    <h3>Sum Array Elements</h3>
+    <pre><code>function sumArray(arr *int, length int) int {
+    total := 0;
+    for i := 0; i < length; i++ {
+        total = total + arr[i];
+    }
+    return total;
+}</code></pre>
+
+    <h3>Create and Return Array</h3>
+    <pre><code>function createSequence(n int) *int {
+    arr := make([]int, n);
+    for i := 0; i < n; i++ {
+        arr[i] = i * 2;
+    }
+    return arr;
+}
+
+function main() {
+    seq := createSequence(5);
+    # Use seq...
+    free(seq);  # Don't forget!
+}</code></pre>
+
+    <h3>Copy Array</h3>
+    <pre><code>function copyArray(src *int, length int) *int {
+    dst := make([]int, length);
+    for i := 0; i < length; i++ {
+        dst[i] = src[i];
+    }
+    return dst;
+}</code></pre>
+
+    <div class="note">
+        <strong>Design Note:</strong> H-lang arrays map directly to C arrays for performance. Fixed arrays use stack allocation, while slices use heap allocation via <code>calloc()</code> for zero-initialized memory.
+    </div>
+
+    <h2>Limitations</h2>
+    <ul>
+        <li>No automatic bounds checking (like C)</li>
+        <li>Slices don't track their length — pass it separately</li>
+        <li>No built-in append/resize — reallocate manually</li>
+        <li><code>len()</code> only works for fixed arrays, not pointers</li>
+    </ul>
+
+    <h2>Testing</h2>
+    <pre><code>func TestFixedArrayLiteral(t *testing.T) {
+    input := `arr := [5]int{1, 2, 3, 4, 5};`
+
+    l := lexer.New(input)
+    p := parser.New(l)
+    program := p.ParseProgram()
+
+    stmt := program.Statements[0].(*ast.InferStatement)
+    arr := stmt.Value.(*ast.ArrayLiteral)
+
+    if arr.Type.ArrayLen != 5 {
+        t.Errorf("expected length 5, got %d", arr.Type.ArrayLen)
+    }
+    if len(arr.Elements) != 5 {
+        t.Errorf("expected 5 elements, got %d", len(arr.Elements))
+    }
+}</code></pre>
+
+    <h2>Summary</h2>
+    <ul>
+        <li><code>[N]type{...}</code> — Fixed array, stack allocated</li>
+        <li><code>[]type{...}</code> — Slice literal</li>
+        <li><code>make([]type, len)</code> — Heap allocated slice</li>
+        <li><code>len(arr)</code> — Array length (fixed arrays only)</li>
+        <li><code>arr[i]</code> — Index access</li>
+        <li><strong>Always <code>free()</code> slices from <code>make()</code>!</strong></li>
+    </ul>
+
+    <nav>
+        <a href="08-defer.html">← Previous: Defer</a>
+        <a href="index.html">Back to Index</a>
+    </nav>
+</body>
+</html>
