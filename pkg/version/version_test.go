@@ -11,10 +11,10 @@ func TestString(t *testing.T) {
 		t.Error("version string should not be empty")
 	}
 
-	// Should have format X.Y.ZZZ
+	// Should have format X.Y.Z.BBB
 	parts := strings.Split(v, ".")
-	if len(parts) != 3 {
-		t.Errorf("version should have 3 parts, got %d: %s", len(parts), v)
+	if len(parts) != 4 {
+		t.Errorf("version should have 4 parts, got %d: %s", len(parts), v)
 	}
 }
 
@@ -45,5 +45,9 @@ func TestVersion_Constants(t *testing.T) {
 
 	if Patch < 0 {
 		t.Errorf("patch version should be >= 0, got %d", Patch)
+	}
+
+	if Build < 0 {
+		t.Errorf("build version should be >= 0, got %d", Build)
 	}
 }

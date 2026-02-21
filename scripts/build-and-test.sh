@@ -1,6 +1,6 @@
 #!/bin/bash
 # build-and-test.sh - Rebuild project and run all tests
-# Increments patch version by the number of passing tests
+# Increments build version by the number of passing tests
 
 set -e
 
@@ -71,23 +71,20 @@ echo ""
 # Calculate total tests
 TOTAL_TESTS=$((UNIT_TESTS + EXAMPLES_PASS))
 
-# Step 7: Increment version by total number of tests
-CURRENT_PATCH=$(grep -oP 'Patch = \K[0-9]+' "$VERSION_FILE")
-NEW_PATCH=$((CURRENT_PATCH + TOTAL_TESTS))
+# Step 7: Increment Build version by total number of tests
+CURRENT_BUILD=$(grep -oP 'Build = \K[0-9]+' "$VERSION_FILE")
+NEW_BUILD=$((CURRENT_BUILD + TOTAL_TESTS))
 
-# Format version string with leading zeros (e.g., 0.0.004)
-NEW_VERSION_STR=$(printf "0.0.%03d" "$NEW_PATCH")
-
-# Update version.go
-sed -i "s/Patch = $CURRENT_PATCH/Patch = $NEW_PATCH/" "$VERSION_FILE"
-sed -i "s/return \"0.0.[0-9]*\"/return \"$NEW_VERSION_STR\"/" "$VERSION_FILE"
+# Update version.go - only update the Build constant
+sed -i "s/Build = $CURRENT_BUILD/Build = $NEW_BUILD/" "$VERSION_FILE"
 
 # Rebuild with new version
 echo -e "${BLUE}[INFO]${NC} Rebuilding with new version..."
 go build -o hlc ./cmd/hlc
 
 # Step 8: Show version
-VERSION=$(./hlc --version 2>/dev/null | head -1)
+OLD_VERSION="0.0.0.$(printf "%03d" $CURRENT_BUILD)"
+NEW_VERSION="0.0.0.$(printf "%03d" $NEW_BUILD)"
 echo ""
 
 # Summary
@@ -98,6 +95,6 @@ echo "  Unit tests:        $UNIT_TESTS"
 echo "  Integration tests: $EXAMPLES_PASS"
 echo "  Total tests:       $TOTAL_TESTS"
 echo ""
-echo "  Version:   0.0.$(printf "%03d" $CURRENT_PATCH) -> $NEW_VERSION_STR (+$TOTAL_TESTS)"
+echo "  Version:   $OLD_VERSION -> $NEW_VERSION (+$TOTAL_TESTS)"
 echo "  Binary:    $(ls -lh hlc | awk '{print $5}')"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

@@ -1,15 +1,18 @@
 package version
 
+import "fmt"
+
 // Version information for H-lang compiler
 const (
 	Major = 0
 	Minor = 0
-	Patch = 113
+	Patch = 0
+	Build = 222
 )
 
 // String returns the version string
 func String() string {
-	return "0.0.113"
+	return fmt.Sprintf("%d.%d.%d.%03d", Major, Minor, Patch, Build)
 }
 
 // Full returns the full version with name
