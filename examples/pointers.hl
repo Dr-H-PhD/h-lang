@@ -1,0 +1,50 @@
+# pointers.hl - Pointer operations
+
+function swap(a *int, b *int) {
+    temp := *a;
+    *a = *b;
+    *b = temp;
+}
+
+function increment(val *int) {
+    *val = *val + 1;
+}
+
+function main() {
+    # Basic pointer operations
+    x := 10;
+    ptr := &x;
+
+    print(x);
+    print(*ptr);
+
+    # Modify through pointer
+    *ptr = 20;
+    print(x);
+
+    # Swap two values
+    a := 5;
+    b := 15;
+
+    print(a);
+    print(b);
+
+    swap(&a, &b);
+
+    print(a);
+    print(b);
+
+    # Increment through pointer
+    count := 0;
+    increment(&count);
+    increment(&count);
+    increment(&count);
+    print(count);
+
+    # Pointer to allocated memory
+    data := alloc(int);
+    defer free(data);
+
+    *data = 42;
+    print(*data);
+}

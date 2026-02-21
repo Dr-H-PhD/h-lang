@@ -1,0 +1,56 @@
+# structs.hl - Structs and methods
+
+public struct Point {
+    public x int;
+    public y int;
+}
+
+public function (p *Point) move(dx int, dy int) {
+    p.x = p.x + dx;
+    p.y = p.y + dy;
+}
+
+public function (p *Point) distance() int {
+    return p.x * p.x + p.y * p.y;
+}
+
+public struct Rectangle {
+    public origin *Point;
+    public width int;
+    public height int;
+}
+
+public function (r *Rectangle) area() int {
+    return r.width * r.height;
+}
+
+function main() {
+    # Create a point
+    p := alloc(Point);
+    defer free(p);
+
+    p.x = 3;
+    p.y = 4;
+
+    print(p.x);
+    print(p.y);
+
+    # Move the point
+    p.move(2, 3);
+    print(p.x);
+    print(p.y);
+
+    # Calculate distance squared
+    dist := p.distance();
+    print(dist);
+
+    # Create a rectangle
+    rect := alloc(Rectangle);
+    defer free(rect);
+
+    rect.width = 10;
+    rect.height = 5;
+
+    area := rect.area();
+    print(area);
+}

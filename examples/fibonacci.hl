@@ -1,0 +1,49 @@
+# fibonacci.hl - Recursion examples
+
+function fibonacci(n int) int {
+    if n <= 1 {
+        return n;
+    }
+    return fibonacci(n - 1) + fibonacci(n - 2);
+}
+
+function factorial(n int) int {
+    if n <= 1 {
+        return 1;
+    }
+    return n * factorial(n - 1);
+}
+
+function power(base int, exp int) int {
+    if exp == 0 {
+        return 1;
+    }
+    return base * power(base, exp - 1);
+}
+
+function gcd(a int, b int) int {
+    if b == 0 {
+        return a;
+    }
+    return gcd(b, a % b);
+}
+
+function main() {
+    # Fibonacci sequence
+    print(fibonacci(0));
+    print(fibonacci(1));
+    print(fibonacci(5));
+    print(fibonacci(10));
+
+    # Factorial
+    print(factorial(5));
+    print(factorial(6));
+
+    # Power
+    print(power(2, 8));
+    print(power(3, 4));
+
+    # GCD
+    print(gcd(48, 18));
+    print(gcd(100, 35));
+}
