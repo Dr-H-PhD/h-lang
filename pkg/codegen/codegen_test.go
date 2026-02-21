@@ -340,6 +340,61 @@ function add(a int, b int) int {
 	}
 }
 
+func TestGenerate_FixedArray(t *testing.T) {
+	input := `function main() {
+    arr := [5]int{1, 2, 3, 4, 5};
+}`
+
+	code := compile(t, input)
+
+	assertContains(t, code, "int arr[5] = {1, 2, 3, 4, 5}")
+}
+
+func TestGenerate_SliceLiteral(t *testing.T) {
+	input := `function main() {
+    nums := []int{10, 20, 30};
+}`
+
+	code := compile(t, input)
+
+	assertContains(t, code, "int nums[] = {10, 20, 30}")
+}
+
+func TestGenerate_ArrayIndexing(t *testing.T) {
+	input := `function main() {
+    arr := [3]int{1, 2, 3};
+    x := arr[0];
+    arr[1] = 100;
+}`
+
+	code := compile(t, input)
+
+	assertContains(t, code, "arr[0]")
+	assertContains(t, code, "arr[1]")
+}
+
+func TestGenerate_LenFunction(t *testing.T) {
+	input := `function main() {
+    arr := [5]int{1, 2, 3, 4, 5};
+    size := len(arr);
+}`
+
+	code := compile(t, input)
+
+	assertContains(t, code, "sizeof(arr)/sizeof(arr[0])")
+}
+
+func TestGenerate_MakeSlice(t *testing.T) {
+	input := `function main() {
+    buf := make([]int, 10);
+}`
+
+	code := compile(t, input)
+
+	assertContains(t, code, "int* buf")
+	assertContains(t, code, "calloc(10, sizeof(int))")
+}
+
 // Helper functions
 
 func compile(t *testing.T, input string) string {

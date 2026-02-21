@@ -251,6 +251,31 @@ func (g *Generator) generateConstStatement(s *ast.ConstStatement) {
 }
 
 func (g *Generator) generateInferStatement(s *ast.InferStatement) {
+	// Special handling for array literals
+	if arr, ok := s.Value.(*ast.ArrayLiteral); ok && arr.Type != nil {
+		elemType := g.typeToC(&ast.TypeAnnotation{Name: arr.Type.Name})
+		if arr.Type.ArrayLen > 0 {
+			// Fixed array: int arr[5] = {1, 2, 3, 4, 5};
+			g.writeLine(fmt.Sprintf("%s %s[%d] = %s;", elemType, s.Name.Value, arr.Type.ArrayLen, g.generateExpression(s.Value)))
+		} else {
+			// Slice (dynamic array): int* arr = (int*)malloc(...);
+			numElems := len(arr.Elements)
+			if numElems > 0 {
+				g.writeLine(fmt.Sprintf("%s %s[] = %s;", elemType, s.Name.Value, g.generateExpression(s.Value)))
+			} else {
+				g.writeLine(fmt.Sprintf("%s* %s = NULL;", elemType, s.Name.Value))
+			}
+		}
+		return
+	}
+
+	// Special handling for make expressions
+	if mk, ok := s.Value.(*ast.MakeExpression); ok {
+		elemType := g.typeToC(&ast.TypeAnnotation{Name: mk.Type.Name})
+		g.writeLine(fmt.Sprintf("%s* %s = %s;", elemType, s.Name.Value, g.generateExpression(s.Value)))
+		return
+	}
+
 	cType := g.inferType(s.Value)
 	g.writeLine(fmt.Sprintf("%s %s = %s;", cType, s.Name.Value, g.generateExpression(s.Value)))
 }
@@ -388,8 +413,21 @@ func (g *Generator) generateExpression(expr ast.Expression) string {
 			elements = append(elements, g.generateExpression(el))
 		}
 		return fmt.Sprintf("{%s}", strings.Join(elements, ", "))
+	case *ast.MakeExpression:
+		return g.generateMakeExpression(e)
 	}
 	return ""
+}
+
+func (g *Generator) generateMakeExpression(e *ast.MakeExpression) string {
+	elemType := g.typeToC(&ast.TypeAnnotation{Name: e.Type.Name})
+	if e.Length != nil {
+		length := g.generateExpression(e.Length)
+		// Allocate array on heap: (int*)calloc(length, sizeof(int))
+		return fmt.Sprintf("(%s*)calloc(%s, sizeof(%s))", elemType, length, elemType)
+	}
+	// Default to empty allocation
+	return fmt.Sprintf("(%s*)calloc(0, sizeof(%s))", elemType, elemType)
 }
 
 func (g *Generator) generateCallExpression(e *ast.CallExpression) string {
@@ -408,11 +446,30 @@ func (g *Generator) generateCallExpression(e *ast.CallExpression) string {
 			case *ast.FloatLiteral:
 				return fmt.Sprintf("printf(\"%%f\\n\", %s)", argStr)
 			default:
-				// Default to string
-				return fmt.Sprintf("printf(\"%%s\\n\", %s)", argStr)
+				// Default to %d for most expressions
+				return fmt.Sprintf("printf(\"%%d\\n\", %s)", argStr)
 			}
 		}
 		return "printf(\"\\n\")"
+	}
+
+	// Handle len() for arrays and strings
+	if funcName == "len" {
+		if len(e.Arguments) > 0 {
+			arg := e.Arguments[0]
+			argStr := g.generateExpression(arg)
+			// For strings, use strlen; for arrays, use sizeof
+			switch arg.(type) {
+			case *ast.StringLiteral:
+				return fmt.Sprintf("strlen(%s)", argStr)
+			case *ast.Identifier:
+				// Check if it's a string or array - for now assume array
+				return fmt.Sprintf("(sizeof(%s)/sizeof(%s[0]))", argStr, argStr)
+			default:
+				return fmt.Sprintf("(sizeof(%s)/sizeof(%s[0]))", argStr, argStr)
+			}
+		}
+		return "0"
 	}
 
 	// Check if it's a method call (obj.method())
