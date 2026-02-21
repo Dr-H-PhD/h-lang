@@ -64,6 +64,7 @@ const (
 	// Keywords
 	FUNCTION
 	STRUCT
+	ENUM
 	IF
 	ELSE
 	FOR
@@ -83,6 +84,8 @@ const (
 	RANGE
 	BREAK
 	CONTINUE
+	MAP
+	DELETE
 
 	// Types
 	TYPE_INT
@@ -138,6 +141,7 @@ var tokenNames = map[TokenType]string{
 	RBRACKET:     "]",
 	FUNCTION:     "function",
 	STRUCT:       "struct",
+	ENUM:         "enum",
 	IF:           "if",
 	ELSE:         "else",
 	FOR:          "for",
@@ -157,6 +161,8 @@ var tokenNames = map[TokenType]string{
 	RANGE:        "range",
 	BREAK:        "break",
 	CONTINUE:     "continue",
+	MAP:          "map",
+	DELETE:       "delete",
 	TYPE_INT:     "int",
 	TYPE_FLOAT:   "float",
 	TYPE_STRING:  "string",
@@ -175,6 +181,7 @@ func (t TokenType) String() string {
 var keywords = map[string]TokenType{
 	"function": FUNCTION,
 	"struct":   STRUCT,
+	"enum":     ENUM,
 	"if":       IF,
 	"else":     ELSE,
 	"for":      FOR,
@@ -194,6 +201,8 @@ var keywords = map[string]TokenType{
 	"range":    RANGE,
 	"break":    BREAK,
 	"continue": CONTINUE,
+	"map":      MAP,
+	"delete":   DELETE,
 	"int":      TYPE_INT,
 	"float":    TYPE_FLOAT,
 	"string":   TYPE_STRING,

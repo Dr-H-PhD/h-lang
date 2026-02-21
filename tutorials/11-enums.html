@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Building H-lang: Enums</title>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --fg: #c9d1d9;
+            --accent: #00ADD8;
+            --code-bg: #161b22;
+            --border: #30363d;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--fg);
+            line-height: 1.6;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        h1, h2, h3 { color: var(--accent); }
+        h1 { border-bottom: 2px solid var(--border); padding-bottom: 0.5rem; }
+        a { color: var(--accent); }
+        code {
+            background: var(--code-bg);
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            font-family: 'Consolas', 'Monaco', monospace;
+        }
+        pre {
+            background: var(--code-bg);
+            padding: 1rem;
+            border-radius: 8px;
+            overflow-x: auto;
+            border: 1px solid var(--border);
+        }
+        pre code { padding: 0; background: none; }
+        .note {
+            background: rgba(0, 173, 216, 0.1);
+            border-left: 4px solid var(--accent);
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 0 8px 8px 0;
+        }
+        .warning {
+            background: rgba(255, 165, 0, 0.1);
+            border-left: 4px solid orange;
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 0 8px 8px 0;
+        }
+        nav {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 2rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--border);
+        }
+        nav a {
+            padding: 0.5rem 1rem;
+            background: var(--code-bg);
+            border-radius: 4px;
+            text-decoration: none;
+        }
+        nav a:hover { background: var(--border); }
+    </style>
+</head>
+<body>
+    <h1>Building H-lang: Enums</h1>
+    <p><strong>Part 11: Enumerated Types</strong></p>
+
+    <h2>Overview</h2>
+    <p>Enums (enumerated types) provide a way to define a set of named integer constants. They improve code readability and type safety by giving meaningful names to numeric values.</p>
+
+    <h2>H-lang Enum Syntax</h2>
+    <p>H-lang supports C-style enums with optional explicit values:</p>
+
+    <pre><code># Simple enum with auto-incrementing values (0, 1, 2...)
+enum Color {
+    Red,
+    Green,
+    Blue
+}
+
+# Enum with explicit values
+enum Status {
+    Pending = 0,
+    Active = 1,
+    Completed = 2,
+    Cancelled = 100
+}
+
+# Public enum (visible outside module)
+public enum Priority {
+    Low = 1,
+    Medium = 5,
+    High = 10
+}</code></pre>
+
+    <h2>Step 1: Lexer Token</h2>
+    <p>First, add the <code>ENUM</code> token to the lexer:</p>
+
+    <pre><code>// In pkg/lexer/token.go
+
+const (
+    // ... existing tokens ...
+    FUNCTION
+    STRUCT
+    ENUM    // &lt;-- Add this
+    IF
+    // ...
+)
+
+var keywords = map[string]TokenType{
+    // ... existing keywords ...
+    "enum":     ENUM,
+    // ...
+}</code></pre>
+
+    <h2>Step 2: AST Nodes</h2>
+    <p>Define the AST nodes for enum values and statements:</p>
+
+    <pre><code>// In pkg/ast/ast.go
+
+// EnumValue represents a single value in an enum
+type EnumValue struct {
+    Name  *Identifier
+    Value Expression // optional explicit value
+}
+
+// EnumStatement: enum Color { Red, Green, Blue }
+type EnumStatement struct {
+    Token  lexer.Token
+    Public bool
+    Name   *Identifier
+    Values []*EnumValue
+}
+
+func (es *EnumStatement) statementNode()       {}
+func (es *EnumStatement) TokenLiteral() string { return es.Token.Literal }
+func (es *EnumStatement) String() string {
+    var out bytes.Buffer
+
+    if es.Public {
+        out.WriteString("public ")
+    }
+    out.WriteString("enum ")
+    out.WriteString(es.Name.String())
+    out.WriteString(" {\n")
+
+    for i, v := range es.Values {
+        out.WriteString("  ")
+        out.WriteString(v.Name.String())
+        if v.Value != nil {
+            out.WriteString(" = ")
+            out.WriteString(v.Value.String())
+        }
+        if i < len(es.Values)-1 {
+            out.WriteString(",")
+        }
+        out.WriteString("\n")
+    }
+
+    out.WriteString("}")
+    return out.String()
+}</code></pre>
+
+    <h2>Step 3: Parser</h2>
+    <p>Add enum parsing to the parser:</p>
+
+    <pre><code>// In pkg/parser/parser.go
+
+func (p *Parser) parseStatement() ast.Statement {
+    switch p.curToken.Type {
+    // ... existing cases ...
+    case lexer.ENUM:
+        return p.parseEnumStatement(false)
+    // ...
+    }
+}
+
+func (p *Parser) parsePublicStatement() ast.Statement {
+    p.nextToken() // consume 'public'
+
+    switch p.curToken.Type {
+    // ... existing cases ...
+    case lexer.ENUM:
+        return p.parseEnumStatement(true)
+    // ...
+    }
+}
+
+func (p *Parser) parseEnumStatement(public bool) *ast.EnumStatement {
+    stmt := &ast.EnumStatement{Token: p.curToken, Public: public}
+
+    if !p.expectPeek(lexer.IDENT) {
+        return nil
+    }
+    stmt.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+
+    if !p.expectPeek(lexer.LBRACE) {
+        return nil
+    }
+
+    stmt.Values = p.parseEnumValues()
+
+    return stmt
+}
+
+func (p *Parser) parseEnumValues() []*ast.EnumValue {
+    values := []*ast.EnumValue{}
+
+    for !p.peekTokenIs(lexer.RBRACE) && !p.peekTokenIs(lexer.EOF) {
+        p.nextToken()
+
+        value := &ast.EnumValue{
+            Name: &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal},
+        }
+
+        // Check for explicit value: Red = 1
+        if p.peekTokenIs(lexer.ASSIGN) {
+            p.nextToken() // consume =
+            p.nextToken() // move to value
+            value.Value = p.parseExpression(LOWEST)
+        }
+
+        values = append(values, value)
+
+        // Expect comma or closing brace
+        if p.peekTokenIs(lexer.COMMA) {
+            p.nextToken()
+        }
+    }
+
+    p.nextToken() // consume }
+    return values
+}</code></pre>
+
+    <h2>Step 4: Code Generation</h2>
+    <p>Generate C enum declarations:</p>
+
+    <pre><code>// In pkg/codegen/codegen.go
+
+type Generator struct {
+    // ... existing fields ...
+    enums map[string]*ast.EnumStatement
+}
+
+func New() *Generator {
+    return &Generator{
+        // ... existing initializations ...
+        enums: make(map[string]*ast.EnumStatement),
+    }
+}
+
+func (g *Generator) Generate(program *ast.Program) string {
+    // Collect enum declarations
+    for _, stmt := range program.Statements {
+        switch s := stmt.(type) {
+        case *ast.EnumStatement:
+            g.enums[s.Name.Value] = s
+        // ... existing cases ...
+        }
+    }
+
+    // ... header generation ...
+
+    // Generate enum definitions (before structs)
+    for _, stmt := range program.Statements {
+        if s, ok := stmt.(*ast.EnumStatement); ok {
+            g.generateEnum(s)
+        }
+    }
+
+    // ... rest of generation ...
+}
+
+func (g *Generator) generateEnum(s *ast.EnumStatement) {
+    g.writeLine("typedef enum {")
+    g.indent++
+
+    for i, val := range s.Values {
+        suffix := ","
+        if i == len(s.Values)-1 {
+            suffix = ""
+        }
+
+        // Generate EnumName_ValueName for C-style namespacing
+        valueName := fmt.Sprintf("%s_%s", s.Name.Value, val.Name.Value)
+
+        if val.Value != nil {
+            g.writeLine(fmt.Sprintf("%s = %s%s",
+                valueName, g.generateExpression(val.Value), suffix))
+        } else {
+            g.writeLine(fmt.Sprintf("%s%s", valueName, suffix))
+        }
+    }
+
+    g.indent--
+    g.writeLine(fmt.Sprintf("} %s;", s.Name.Value))
+    g.writeLine("")
+}</code></pre>
+
+    <h2>Generated C Code</h2>
+    <p>The H-lang enum:</p>
+    <pre><code>enum Color {
+    Red,
+    Green,
+    Blue
+}</code></pre>
+
+    <p>Generates this C code:</p>
+    <pre><code>typedef enum {
+    Color_Red,
+    Color_Green,
+    Color_Blue
+} Color;</code></pre>
+
+    <div class="note">
+        <strong>Namespacing:</strong> Enum values are prefixed with the enum name (e.g., <code>Color_Red</code>) to avoid name collisions in C, which has a flat namespace for enum values.
+    </div>
+
+    <h2>Using Enums</h2>
+    <p>Enum values are accessed using the namespaced syntax:</p>
+
+    <pre><code>function main() {
+    # Use enum values
+    color := Color_Red;
+    status := Status_Active;
+
+    # Compare enum values
+    if color == Color_Red {
+        print(1);
+    }
+
+    # Enums are integers - can compare with numbers
+    if status == 1 {
+        print(999);
+    }
+
+    # Print enum value (prints the integer)
+    print(color);  # prints 0
+}</code></pre>
+
+    <h2>Complete Example</h2>
+    <pre><code># enums.hl
+
+enum Color {
+    Red,
+    Green,
+    Blue
+}
+
+enum Status {
+    Pending = 0,
+    Active = 1,
+    Completed = 2,
+    Cancelled = 100
+}
+
+public enum Priority {
+    Low = 1,
+    Medium = 5,
+    High = 10,
+    Critical = 100
+}
+
+function main() {
+    color := Color_Red;
+    print(color);  # 0
+
+    status := Status_Active;
+    print(status);  # 1
+
+    priority := Priority_High;
+    print(priority);  # 10
+
+    if status == Status_Active {
+        print(1);
+    }
+
+    if color == Color_Red {
+        print(100);
+    } else {
+        if color == Color_Green {
+            print(200);
+        } else {
+            print(300);
+        }
+    }
+}</code></pre>
+
+    <div class="warning">
+        <strong>Note:</strong> H-lang enums are integer-based like C enums. They don't provide type safety beyond what C offers. Comparing an enum to an arbitrary integer is allowed.
+    </div>
+
+    <h2>Summary</h2>
+    <ul>
+        <li>Enums define named integer constants</li>
+        <li>Values auto-increment from 0 unless explicit values are given</li>
+        <li>Enum values are namespaced: <code>EnumName_ValueName</code></li>
+        <li>Use <code>public enum</code> for visibility outside the module</li>
+        <li>Enums transpile to C <code>typedef enum</code></li>
+    </ul>
+
+    <nav>
+        <a href="10-forrange.html">&larr; Previous: For-Range Loops</a>
+        <a href="12-maps.html">Next: Maps &rarr;</a>
+    </nav>
+</body>
+</html>

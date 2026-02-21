@@ -1,0 +1,57 @@
+# enums.hl - Enum demonstration
+
+# Simple enum with auto-incrementing values
+enum Color {
+    Red,
+    Green,
+    Blue
+}
+
+# Enum with explicit values
+enum Status {
+    Pending = 0,
+    Active = 1,
+    Completed = 2,
+    Cancelled = 100
+}
+
+# Public enum
+public enum Priority {
+    Low = 1,
+    Medium = 5,
+    High = 10,
+    Critical = 100
+}
+
+function main() {
+    # Use enum values
+    color := Color_Red;
+    print(color);  # 0
+
+    status := Status_Active;
+    print(status);  # 1
+
+    priority := Priority_High;
+    print(priority);  # 10
+
+    # Enum comparison
+    if status == Status_Active {
+        print(1);  # prints 1 (true)
+    }
+
+    # Enum in switch-like if-else
+    if color == Color_Red {
+        print(100);
+    } else {
+        if color == Color_Green {
+            print(200);
+        } else {
+            print(300);
+        }
+    }
+
+    # Explicit value check
+    if status == 1 {
+        print(999);  # Status_Active equals 1
+    }
+}
