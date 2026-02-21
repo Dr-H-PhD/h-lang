@@ -43,7 +43,7 @@ func TestVersion_Constants(t *testing.T) {
 		t.Errorf("initial minor version should be 0, got %d", Minor)
 	}
 
-	if Patch != 1 {
-		t.Errorf("initial patch version should be 1, got %d", Patch)
+	if Patch != 2 {
+		t.Errorf("patch version should be 2, got %d", Patch)
 	}
 }

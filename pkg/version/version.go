@@ -4,12 +4,12 @@ package version
 const (
 	Major = 0
 	Minor = 0
-	Patch = 1
+	Patch = 2
 )
 
 // String returns the version string
 func String() string {
-	return "0.0.001"
+	return "0.0.002"
 }
 
 // Full returns the full version with name
