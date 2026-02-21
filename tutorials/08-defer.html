@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Building H-lang: Defer</title>
+    <style>
+        :root { --bg: #0d1117; --fg: #c9d1d9; --accent: #00ADD8; --code-bg: #161b22; --border: #30363d; --green: #10b981; --orange: #f97316; }
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; background: var(--bg); color: var(--fg); line-height: 1.6; max-width: 900px; margin: 0 auto; padding: 2rem; }
+        h1, h2, h3 { color: var(--accent); }
+        h1 { border-bottom: 2px solid var(--border); padding-bottom: 0.5rem; }
+        a { color: var(--accent); }
+        code { background: var(--code-bg); padding: 0.2rem 0.4rem; border-radius: 4px; font-family: 'Consolas', 'Monaco', monospace; }
+        pre { background: var(--code-bg); padding: 1rem; border-radius: 8px; overflow-x: auto; border: 1px solid var(--border); }
+        pre code { padding: 0; background: none; }
+        .note { background: rgba(0, 173, 216, 0.1); border-left: 4px solid var(--accent); padding: 1rem; margin: 1rem 0; border-radius: 0 8px 8px 0; }
+        .warning { background: rgba(249, 115, 22, 0.1); border-left: 4px solid var(--orange); padding: 1rem; margin: 1rem 0; border-radius: 0 8px 8px 0; }
+        .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+        .compare > div { background: var(--code-bg); padding: 1rem; border-radius: 8px; }
+        .compare h4 { margin-top: 0; color: var(--green); }
+        nav { display: flex; justify-content: space-between; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+        nav a { padding: 0.5rem 1rem; background: var(--code-bg); border-radius: 4px; text-decoration: none; }
+        nav a:hover { background: var(--border); }
+        table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+        th, td { border: 1px solid var(--border); padding: 0.5rem; text-align: left; }
+        th { background: var(--code-bg); color: var(--accent); }
+    </style>
+</head>
+<body>
+    <h1>Building H-lang: Defer</h1>
+    <p><strong>Part 8: Deferred Execution for Cleanup</strong></p>
+
+    <h2>What is Defer?</h2>
+    <p><code>defer</code> schedules a statement to execute when the current function returns. This is essential for cleanup, especially with manual memory management.</p>
+
+    <pre><code>function process() {
+    file := alloc(File);
+    defer free(file);  // Runs when function exits
+
+    // ... use file ...
+
+    // No matter how we exit, free(file) runs!
+}</code></pre>
+
+    <h2>Why Defer Matters</h2>
+    <p>Without defer, you must remember to clean up before every return:</p>
+
+    <div class="compare">
+        <div>
+            <h4>Without Defer (Error-prone)</h4>
+            <pre><code>function process() int {
+    file := alloc(File);
+
+    if error1 {
+        free(file);  // Don't forget!
+        return -1;
+    }
+
+    if error2 {
+        free(file);  // Easy to miss!
+        return -2;
+    }
+
+    free(file);  // And here too!
+    return 0;
+}</code></pre>
+        </div>
+        <div>
+            <h4>With Defer (Clean)</h4>
+            <pre><code>function process() int {
+    file := alloc(File);
+    defer free(file);  // Once!
+
+    if error1 {
+        return -1;  // defer runs
+    }
+
+    if error2 {
+        return -2;  // defer runs
+    }
+
+    return 0;  // defer runs
+}</code></pre>
+        </div>
+    </div>
+
+    <h2>LIFO Order</h2>
+    <p>Multiple defers execute in Last-In-First-Out order (like a stack):</p>
+
+    <pre><code>function example() {
+    defer print("Third");   // Runs 3rd
+    defer print("Second");  // Runs 2nd
+    defer print("First");   // Runs 1st
+
+    print("Hello");
+}
+
+// Output:
+// Hello
+// First
+// Second
+// Third</code></pre>
+
+    <div class="note">
+        <strong>Why LIFO?</strong> Resources acquired later often depend on resources acquired earlier. LIFO ensures proper cleanup order.
+    </div>
+
+    <h2>Implementation</h2>
+
+    <h3>Step 1: Add Token</h3>
+    <pre><code>// pkg/lexer/token.go
+const (
+    // ... existing tokens ...
+    DEFER
+)
+
+var keywords = map[string]TokenType{
+    // ... existing keywords ...
+    "defer": DEFER,
+}</code></pre>
+
+    <h3>Step 2: Add AST Node</h3>
+    <pre><code>// pkg/ast/ast.go
+type DeferStatement struct {
+    Token     lexer.Token
+    Statement Statement
+}
+
+func (ds *DeferStatement) statementNode()       {}
+func (ds *DeferStatement) TokenLiteral() string { return ds.Token.Literal }
+func (ds *DeferStatement) String() string {
+    return "defer " + ds.Statement.String()
+}</code></pre>
+
+    <h3>Step 3: Parse Defer</h3>
+    <pre><code>// pkg/parser/parser.go
+func (p *Parser) parseStatement() ast.Statement {
+    switch p.curToken.Type {
+    // ... existing cases ...
+    case lexer.DEFER:
+        return p.parseDeferStatement()
+    }
+}
+
+func (p *Parser) parseDeferStatement() *ast.DeferStatement {
+    stmt := &ast.DeferStatement{Token: p.curToken}
+    p.nextToken()
+    stmt.Statement = p.parseStatement()
+    return stmt
+}</code></pre>
+
+    <h3>Step 4: Generate C Code</h3>
+    <p>C doesn't have defer, so we must emit deferred statements manually:</p>
+
+    <pre><code>// pkg/codegen/codegen.go
+type Generator struct {
+    // ... existing fields ...
+    deferredStmts []ast.Statement  // Stack of deferred statements
+}
+
+func (g *Generator) generateDeferStatement(s *ast.DeferStatement) {
+    // Add to stack - executed later
+    g.deferredStmts = append(g.deferredStmts, s.Statement)
+}
+
+func (g *Generator) emitDeferredStatements() {
+    // LIFO order
+    for i := len(g.deferredStmts) - 1; i >= 0; i-- {
+        g.generateStatementDirect(g.deferredStmts[i])
+    }
+}
+
+func (g *Generator) generateReturnStatement(s *ast.ReturnStatement) {
+    if s.Value != nil && len(g.deferredStmts) > 0 {
+        // Save return value before running defers
+        retType := g.inferType(s.Value)
+        g.writeLine(fmt.Sprintf("%s __ret_val = %s;", retType,
+            g.generateExpression(s.Value)))
+        g.emitDeferredStatements()
+        g.writeLine("return __ret_val;")
+    } else {
+        g.emitDeferredStatements()
+        if s.Value != nil {
+            g.writeLine(fmt.Sprintf("return %s;", g.generateExpression(s.Value)))
+        } else {
+            g.writeLine("return;")
+        }
+    }
+}</code></pre>
+
+    <h2>Generated C Code</h2>
+    <div class="compare">
+        <div>
+            <h4>H-lang</h4>
+            <pre><code>function process() int {
+    x := alloc(Data);
+    defer free(x);
+    defer print("cleanup");
+
+    if x != null {
+        return 1;
+    }
+    return 0;
+}</code></pre>
+        </div>
+        <div>
+            <h4>Generated C</h4>
+            <pre><code>int process(void) {
+    Data* x = (Data*)malloc(sizeof(Data));
+
+    if ((x != NULL)) {
+        int __ret_val = 1;
+        printf("%s\n", "cleanup");
+        free(x);
+        return __ret_val;
+    }
+    printf("%s\n", "cleanup");
+    free(x);
+    return 0;
+}</code></pre>
+        </div>
+    </div>
+
+    <h2>Common Patterns</h2>
+
+    <h3>Resource Cleanup</h3>
+    <pre><code>function readFile(path string) string {
+    file := openFile(path);
+    defer closeFile(file);
+
+    buffer := alloc(Buffer);
+    defer free(buffer);
+
+    // Read and process...
+    return buffer.data;
+}</code></pre>
+
+    <h3>Lock/Unlock</h3>
+    <pre><code>function criticalSection() {
+    lock(mutex);
+    defer unlock(mutex);
+
+    // Protected code...
+}</code></pre>
+
+    <h3>Timing</h3>
+    <pre><code>function timedOperation() {
+    start := now();
+    defer printElapsed(start);
+
+    // Operation...
+}</code></pre>
+
+    <div class="warning">
+        <strong>Defer Limitations:</strong>
+        <ul>
+            <li>Deferred expressions are evaluated when defer is called, not when it runs</li>
+            <li>Defer only runs at function exit, not block exit</li>
+            <li>Don't defer in loops (creates unbounded stack)</li>
+        </ul>
+    </div>
+
+    <h2>Testing Defer</h2>
+    <pre><code>// Test LIFO order
+func TestDeferOrder(t *testing.T) {
+    input := `
+    function main() {
+        defer print("3");
+        defer print("2");
+        defer print("1");
+    }
+    `
+    // Should generate: print 1, print 2, print 3 at function end
+}</code></pre>
+
+    <h2>Summary</h2>
+    <ul>
+        <li><code>defer</code> schedules cleanup to run at function exit</li>
+        <li>Multiple defers execute in LIFO order</li>
+        <li>Essential for manual memory management</li>
+        <li>Generated as inline code before each return in C</li>
+    </ul>
+
+    <nav>
+        <a href="07-testing.html">← Previous: Testing</a>
+        <a href="index.html">Back to Index</a>
+    </nav>
+</body>
+</html>
