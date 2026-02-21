@@ -225,6 +225,8 @@ func (p *Parser) parseStatement() ast.Statement {
 		return p.parseWhileStatement()
 	case lexer.FREE:
 		return p.parseFreeStatement()
+	case lexer.DEFER:
+		return p.parseDeferStatement()
 	case lexer.IDENT:
 		if p.peekTokenIs(lexer.WALRUS) {
 			return p.parseInferStatement()
@@ -599,6 +601,17 @@ func (p *Parser) parseFreeStatement() *ast.FreeStatement {
 	if p.peekTokenIs(lexer.SEMICOLON) {
 		p.nextToken()
 	}
+
+	return stmt
+}
+
+func (p *Parser) parseDeferStatement() *ast.DeferStatement {
+	stmt := &ast.DeferStatement{Token: p.curToken}
+
+	p.nextToken()
+
+	// Parse the deferred statement
+	stmt.Statement = p.parseStatement()
 
 	return stmt
 }
