@@ -570,3 +570,29 @@ func (al *ArrayLiteral) String() string {
 	out.WriteString("}")
 	return out.String()
 }
+
+// MakeExpression: make([]int, 10) or make([]int, 10, 20)
+type MakeExpression struct {
+	Token    lexer.Token
+	Type     *TypeAnnotation
+	Length   Expression
+	Capacity Expression
+}
+
+func (me *MakeExpression) expressionNode()      {}
+func (me *MakeExpression) TokenLiteral() string { return me.Token.Literal }
+func (me *MakeExpression) String() string {
+	var out bytes.Buffer
+	out.WriteString("make(")
+	out.WriteString(me.Type.String())
+	if me.Length != nil {
+		out.WriteString(", ")
+		out.WriteString(me.Length.String())
+	}
+	if me.Capacity != nil {
+		out.WriteString(", ")
+		out.WriteString(me.Capacity.String())
+	}
+	out.WriteString(")")
+	return out.String()
+}
