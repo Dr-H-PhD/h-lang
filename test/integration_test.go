@@ -264,6 +264,188 @@ function main() {
 	}
 }
 
+func TestCompilation_ForRange(t *testing.T) {
+	source := `
+function main() {
+    arr := [5]int{1, 2, 3, 4, 5};
+    sum := 0;
+    for i, v := range arr {
+        sum = sum + v;
+    }
+}
+`
+	err := compileOnly(t, source)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+}
+
+func TestCompilation_ForRangeIndexOnly(t *testing.T) {
+	source := `
+function main() {
+    arr := [3]int{10, 20, 30};
+    for i := range arr {
+        print(i);
+    }
+}
+`
+	err := compileOnly(t, source)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+}
+
+func TestCompilation_Break(t *testing.T) {
+	source := `
+function main() {
+    for i := 0; i < 10; i++ {
+        if i == 5 {
+            break;
+        }
+    }
+}
+`
+	err := compileOnly(t, source)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+}
+
+func TestCompilation_Continue(t *testing.T) {
+	source := `
+function main() {
+    sum := 0;
+    for i := 0; i < 10; i++ {
+        if i == 5 {
+            continue;
+        }
+        sum = sum + i;
+    }
+}
+`
+	err := compileOnly(t, source)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+}
+
+func TestCompilation_Enum(t *testing.T) {
+	source := `
+enum Color {
+    Red,
+    Green,
+    Blue
+}
+
+function main() {
+    c := Color_Red;
+    if c == Color_Green {
+        print(1);
+    }
+}
+`
+	err := compileOnly(t, source)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+}
+
+func TestCompilation_EnumWithValues(t *testing.T) {
+	source := `
+enum Status {
+    Pending = 0,
+    Active = 1,
+    Completed = 2,
+    Cancelled = 100
+}
+
+function main() {
+    s := Status_Active;
+    if s == 1 {
+        print(s);
+    }
+}
+`
+	err := compileOnly(t, source)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+}
+
+func TestCompilation_WhileBreak(t *testing.T) {
+	source := `
+function main() {
+    x := 0;
+    while true {
+        x++;
+        if x >= 10 {
+            break;
+        }
+    }
+}
+`
+	err := compileOnly(t, source)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+}
+
+func TestCompilation_MapLiteral(t *testing.T) {
+	source := `
+function main() {
+    ages := map[string]int{"Alice": 30, "Bob": 25};
+    x := ages["Alice"];
+    print(x);
+}
+`
+	err := compileOnly(t, source)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+}
+
+func TestCompilation_MapEmpty(t *testing.T) {
+	source := `
+function main() {
+    data := map[string]int{};
+    data["key"] = 42;
+    print(data["key"]);
+}
+`
+	err := compileOnly(t, source)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+}
+
+func TestCompilation_MapDelete(t *testing.T) {
+	source := `
+function main() {
+    ages := map[string]int{"Alice": 30};
+    delete(ages, "Alice");
+    print(len(ages));
+}
+`
+	err := compileOnly(t, source)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+}
+
+func TestCompilation_MapFree(t *testing.T) {
+	source := `
+function main() {
+    ages := map[string]int{"Alice": 30, "Bob": 25};
+    print(len(ages));
+    free(ages);
+}
+`
+	err := compileOnly(t, source)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+}
+
 // compileOnly compiles H-lang code to C and verifies C compilation succeeds
 func compileOnly(t *testing.T, source string) error {
 	t.Helper()
