@@ -60,6 +60,8 @@ function main() {
 | Pointers | `ptr := &x; *ptr = 10;` | C-style pointers |
 | Structs | `struct User { name string; }` | User-defined types |
 | Methods | `function (u *User) greet() string` | Methods on structs |
+| Enums | `enum Color { Red, Green, Blue }` | Enumerated types |
+| Maps | `map[string]int{"key": 42}` | Hash maps with string keys |
 | Arrays | `[5]int{1, 2, 3, 4, 5}` | Fixed-size arrays |
 | Slices | `[]int{1, 2, 3}` | Dynamic arrays |
 | For loops | `for i := 0; i < 10; i++` | C-style for loops |
@@ -166,6 +168,8 @@ The `tutorials/` directory contains a complete guide to building the compiler:
 | 8 | [Defer](tutorials/08-defer.html) | Deferred execution |
 | 9 | [Arrays & Slices](tutorials/09-arrays.html) | Collection types |
 | 10 | [For-Range Loops](tutorials/10-forrange.html) | Iterating collections |
+| 11 | [Enums](tutorials/11-enums.html) | Enumerated types |
+| 12 | [Maps](tutorials/12-maps.html) | Hash maps |
 
 ## Examples
 
@@ -177,6 +181,8 @@ The `tutorials/` directory contains a complete guide to building the compiler:
 | `operators.hl` | Arithmetic, comparison, logical operators |
 | `pointers.hl` | Pointer operations |
 | `structs.hl` | Structs and methods |
+| `enums.hl` | Enumerated types |
+| `maps.hl` | Hash maps |
 | `arrays.hl` | Arrays and slices |
 | `defer.hl` | Defer statement |
 | `forrange.hl` | For-range loops |

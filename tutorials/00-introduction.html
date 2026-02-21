@@ -108,6 +108,7 @@
         <tr><td>Memory</td><td>Manual (<code>alloc</code>/<code>free</code>)</td></tr>
         <tr><td>Defer</td><td><code>defer</code> statement (LIFO cleanup)</td></tr>
         <tr><td>Arrays</td><td>Fixed <code>[5]int</code> and slices <code>[]int</code></td></tr>
+        <tr><td>Enums</td><td><code>enum Color { Red, Green }</code></td></tr>
         <tr><td>For-Range</td><td><code>for i, v := range arr</code></td></tr>
         <tr><td>Loop Control</td><td><code>break</code>, <code>continue</code></td></tr>
         <tr><td>Target</td><td>Transpile to C</td></tr>
@@ -116,6 +117,12 @@
 
     <h2>Syntax Preview</h2>
     <pre><code># hello.hl - Hello World in H-lang
+
+// Enum definition
+enum Status {
+    Active = 1,
+    Inactive = 0
+}
 
 // User struct with public and private fields
 public struct User {
@@ -182,6 +189,7 @@ function main() {
         <li><a href="08-defer.html">Defer</a> — Deferred execution for cleanup</li>
         <li><a href="09-arrays.html">Arrays &amp; Slices</a> — Fixed and dynamic arrays</li>
         <li><a href="10-forrange.html">For-Range Loops</a> — Iterating over collections</li>
+        <li><a href="11-enums.html">Enums</a> — Enumerated types</li>
     </ol>
 
     <div class="note">
