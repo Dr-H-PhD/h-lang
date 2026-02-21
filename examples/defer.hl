@@ -1,0 +1,59 @@
+# defer.hl - Demonstrating defer for cleanup
+
+public struct File {
+    public name string;
+    public handle int;
+}
+
+public function (f *File) close() {
+    print("Closing file");
+    // In real code: close(f.handle);
+}
+
+function processFile() int {
+    file := alloc(File);
+    defer free(file);        // Will run last (LIFO)
+    defer file.close();      // Will run before free
+
+    file.name = "data.txt";
+    file.handle = 42;
+
+    print("Processing file");
+
+    // Even with early return, defer runs!
+    if file.handle > 0 {
+        print("File is valid");
+        return 1;
+    }
+
+    return 0;
+}
+
+function multipleDefers() {
+    print("Start");
+
+    defer print("Third - runs last");
+    defer print("Second");
+    defer print("First - runs first of defers");
+
+    print("Middle");
+    print("End");
+
+    // Output order:
+    // Start
+    // Middle
+    // End
+    // First - runs first of defers
+    // Second
+    // Third - runs last
+}
+
+function main() {
+    print("=== Defer with file ===");
+    result := processFile();
+    print(result);
+
+    print("");
+    print("=== Multiple defers (LIFO order) ===");
+    multipleDefers();
+}

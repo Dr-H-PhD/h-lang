@@ -34,8 +34,10 @@ function main() {
     // Explicit type
     var count int = 0;
 
-    // Heap allocation
+    // Heap allocation with defer for cleanup
     user := alloc(User);
+    defer free(user);  // Will run at function exit
+
     user.name = "Achraf";
     user.age = 30;
 
@@ -71,6 +73,5 @@ function main() {
     i := (int)f;
     print(i);
 
-    // Clean up
-    free(user);
+    // No need to free(user) - defer handles it!
 }
