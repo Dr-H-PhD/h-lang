@@ -8,30 +8,50 @@ import (
 	"github.com/Dr-H-PhD/h-lang/pkg/ast"
 )
 
+// ImportResolver is a function that resolves an import path and returns the parsed AST
+// The basePath is the directory of the file containing the import
+type ImportResolver func(importPath, basePath string) (*ast.Program, error)
+
 // Generator generates C code from H-lang AST
 type Generator struct {
-	output        bytes.Buffer
-	indent        int
-	structs       map[string]*ast.StructStatement
-	functions     map[string]*ast.FunctionStatement
-	enums         map[string]*ast.EnumStatement
-	variables     map[string]string // variable name -> type (e.g., "User*", "int")
-	deferredStmts []ast.Statement   // Stack of deferred statements
-	usesMap       bool              // true if the program uses maps
+	output            bytes.Buffer
+	indent            int
+	structs           map[string]*ast.StructStatement
+	functions         map[string]*ast.FunctionStatement
+	enums             map[string]*ast.EnumStatement
+	variables         map[string]string // variable name -> type (e.g., "User*", "int")
+	deferredStmts     []ast.Statement   // Stack of deferred statements
+	usesMap           bool              // true if the program uses maps
+	importedFiles     map[string]bool   // tracks already imported files
+	importResolver    ImportResolver    // function to resolve imports
+	basePath          string            // directory of current source file
+	importedStructs   []*ast.StructStatement
+	importedFunctions []*ast.FunctionStatement
+	importedEnums     []*ast.EnumStatement
 }
 
 // New creates a new code generator
 func New() *Generator {
 	return &Generator{
-		structs:   make(map[string]*ast.StructStatement),
-		functions: make(map[string]*ast.FunctionStatement),
-		enums:     make(map[string]*ast.EnumStatement),
-		variables: make(map[string]string),
+		structs:       make(map[string]*ast.StructStatement),
+		functions:     make(map[string]*ast.FunctionStatement),
+		enums:         make(map[string]*ast.EnumStatement),
+		variables:     make(map[string]string),
+		importedFiles: make(map[string]bool),
 	}
+}
+
+// SetImportResolver sets the function used to resolve imports
+func (g *Generator) SetImportResolver(resolver ImportResolver, basePath string) {
+	g.importResolver = resolver
+	g.basePath = basePath
 }
 
 // Generate produces C code from the AST
 func (g *Generator) Generate(program *ast.Program) string {
+	// Process imports first
+	g.processImports(program)
+
 	// First pass: collect struct, enum and function declarations
 	for _, stmt := range program.Statements {
 		switch s := stmt.(type) {
@@ -76,7 +96,12 @@ func (g *Generator) Generate(program *ast.Program) string {
 		g.generateMapHelpers()
 	}
 
-	// Generate enum definitions
+	// Generate imported enum definitions first
+	for _, s := range g.importedEnums {
+		g.generateEnum(s)
+	}
+
+	// Generate enum definitions from main program
 	for _, stmt := range program.Statements {
 		if s, ok := stmt.(*ast.EnumStatement); ok {
 			g.generateEnum(s)
@@ -91,14 +116,24 @@ func (g *Generator) Generate(program *ast.Program) string {
 		g.writeLine("")
 	}
 
-	// Generate struct definitions
+	// Generate imported struct definitions first
+	for _, s := range g.importedStructs {
+		g.generateStruct(s)
+	}
+
+	// Generate struct definitions from main program
 	for _, stmt := range program.Statements {
 		if s, ok := stmt.(*ast.StructStatement); ok {
 			g.generateStruct(s)
 		}
 	}
 
-	// Generate function forward declarations
+	// Generate imported function forward declarations
+	for _, s := range g.importedFunctions {
+		g.generateFunctionDeclaration(s)
+	}
+
+	// Generate function forward declarations from main program
 	for _, stmt := range program.Statements {
 		if s, ok := stmt.(*ast.FunctionStatement); ok {
 			g.generateFunctionDeclaration(s)
@@ -108,7 +143,12 @@ func (g *Generator) Generate(program *ast.Program) string {
 		g.writeLine("")
 	}
 
-	// Generate function implementations
+	// Generate imported function implementations
+	for _, s := range g.importedFunctions {
+		g.generateFunction(s)
+	}
+
+	// Generate function implementations from main program
 	for _, stmt := range program.Statements {
 		if s, ok := stmt.(*ast.FunctionStatement); ok {
 			g.generateFunction(s)
@@ -116,6 +156,62 @@ func (g *Generator) Generate(program *ast.Program) string {
 	}
 
 	return g.output.String()
+}
+
+// processImports handles import statements recursively
+func (g *Generator) processImports(program *ast.Program) {
+	for _, stmt := range program.Statements {
+		if imp, ok := stmt.(*ast.ImportStatement); ok {
+			g.processImport(imp)
+		}
+	}
+}
+
+// processImport processes a single import statement
+func (g *Generator) processImport(imp *ast.ImportStatement) {
+	// Skip if no resolver is set
+	if g.importResolver == nil {
+		return
+	}
+
+	// Skip if already imported
+	if g.importedFiles[imp.Path] {
+		return
+	}
+
+	// Mark as imported to prevent circular imports
+	g.importedFiles[imp.Path] = true
+
+	// Resolve the import
+	importedProgram, err := g.importResolver(imp.Path, g.basePath)
+	if err != nil {
+		// Error handling - for now just skip
+		return
+	}
+
+	// Process imports in the imported file (recursive)
+	g.processImports(importedProgram)
+
+	// Collect public declarations from the imported file
+	for _, stmt := range importedProgram.Statements {
+		switch s := stmt.(type) {
+		case *ast.StructStatement:
+			if s.Public {
+				g.structs[s.Name.Value] = s
+				g.importedStructs = append(g.importedStructs, s)
+			}
+		case *ast.FunctionStatement:
+			if s.Public {
+				g.functions[s.Name.Value] = s
+				g.importedFunctions = append(g.importedFunctions, s)
+			}
+		case *ast.EnumStatement:
+			if s.Public {
+				g.enums[s.Name.Value] = s
+				g.importedEnums = append(g.importedEnums, s)
+			}
+		}
+	}
 }
 
 func (g *Generator) write(s string) {
