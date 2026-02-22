@@ -74,6 +74,8 @@ function main() {
 | Alloc/Free | `alloc(Type)` / `free(ptr)` | Manual memory management |
 | Casting | `(int)x` | C-style type casting |
 | Comments | `//`, `/* */`, `#` | Three comment styles |
+| Imports | `import "path.hl";` | Modular code with imports |
+| Public | `public function` | Export declarations |
 
 ## Language Specification
 
@@ -170,6 +172,7 @@ The `tutorials/` directory contains a complete guide to building the compiler:
 | 10 | [For-Range Loops](tutorials/10-forrange.html) | Iterating collections |
 | 11 | [Enums](tutorials/11-enums.html) | Enumerated types |
 | 12 | [Maps](tutorials/12-maps.html) | Hash maps |
+| 13 | [Imports](tutorials/13-imports.html) | Modular code |
 
 ## Examples
 
@@ -188,6 +191,7 @@ The `tutorials/` directory contains a complete guide to building the compiler:
 | `forrange.hl` | For-range loops |
 | `loops.hl` | Break and continue |
 | `demo.hl` | Full feature demonstration |
+| `imports.hl` | Import system demonstration |
 
 ## Requirements
 

@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Building H-lang: Imports</title>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --fg: #c9d1d9;
+            --accent: #00ADD8;
+            --code-bg: #161b22;
+            --border: #30363d;
+            --green: #10b981;
+            --orange: #f97316;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--fg);
+            line-height: 1.6;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        h1, h2, h3 { color: var(--accent); }
+        h1 { border-bottom: 2px solid var(--border); padding-bottom: 0.5rem; }
+        a { color: var(--accent); }
+        code {
+            background: var(--code-bg);
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            font-family: 'Consolas', 'Monaco', monospace;
+        }
+        pre {
+            background: var(--code-bg);
+            padding: 1rem;
+            border-radius: 8px;
+            overflow-x: auto;
+            border: 1px solid var(--border);
+        }
+        pre code { padding: 0; background: none; }
+        .note {
+            background: rgba(0, 173, 216, 0.1);
+            border-left: 4px solid var(--accent);
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 0 8px 8px 0;
+        }
+        .warning {
+            background: rgba(249, 115, 22, 0.1);
+            border-left: 4px solid var(--orange);
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 0 8px 8px 0;
+        }
+        .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+        .compare > div { background: var(--code-bg); padding: 1rem; border-radius: 8px; }
+        .compare h4 { margin-top: 0; color: var(--green); }
+        nav {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 2rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--border);
+        }
+        nav a {
+            padding: 0.5rem 1rem;
+            background: var(--code-bg);
+            border-radius: 4px;
+            text-decoration: none;
+        }
+        nav a:hover { background: var(--border); }
+        table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+        th, td { border: 1px solid var(--border); padding: 0.5rem; text-align: left; }
+        th { background: var(--code-bg); color: var(--accent); }
+    </style>
+</head>
+<body>
+    <h1>Building H-lang: Imports</h1>
+    <p><strong>Part 13: Modular Code with Imports</strong></p>
+
+    <h2>Overview</h2>
+    <p>Imports allow you to split code across multiple files and reuse library functions. Only <code>public</code> declarations are importable.</p>
+
+    <h2>Syntax</h2>
+    <table>
+        <tr>
+            <th>Feature</th>
+            <th>Syntax</th>
+            <th>Example</th>
+        </tr>
+        <tr>
+            <td>Import</td>
+            <td><code>import "path";</code></td>
+            <td><code>import "math.hl";</code></td>
+        </tr>
+        <tr>
+            <td>Relative path</td>
+            <td><code>import "../lib/file.hl";</code></td>
+            <td><code>import "../lib/math.hl";</code></td>
+        </tr>
+        <tr>
+            <td>Public function</td>
+            <td><code>public function name()</code></td>
+            <td><code>public function abs(x int) int</code></td>
+        </tr>
+        <tr>
+            <td>Public struct</td>
+            <td><code>public struct Name</code></td>
+            <td><code>public struct Point { ... }</code></td>
+        </tr>
+        <tr>
+            <td>Public enum</td>
+            <td><code>public enum Name</code></td>
+            <td><code>public enum Color { ... }</code></td>
+        </tr>
+    </table>
+
+    <h2>Basic Usage</h2>
+
+    <h3>Library File (lib/math.hl)</h3>
+    <pre><code># Math library - provides basic math functions
+
+public function abs(x int) int {
+    if x < 0 {
+        return -x;
+    }
+    return x;
+}
+
+public function max(a int, b int) int {
+    if a > b {
+        return a;
+    }
+    return b;
+}
+
+public function min(a int, b int) int {
+    if a < b {
+        return a;
+    }
+    return b;
+}
+
+public function factorial(n int) int {
+    if n <= 1 {
+        return 1;
+    }
+    return n * factorial(n - 1);
+}</code></pre>
+
+    <h3>Main File (examples/imports.hl)</h3>
+    <pre><code>import "../lib/math.hl";
+
+function main() {
+    print(abs(-42));       # 42
+    print(max(10, 20));    # 20
+    print(min(10, 20));    # 10
+    print(factorial(5));   # 120
+}</code></pre>
+
+    <div class="note">
+        <strong>Visibility:</strong> Only declarations marked with <code>public</code> are visible to importers. Private functions remain internal to the library.
+    </div>
+
+    <h2>Implementation</h2>
+
+    <h3>Step 1: Add Token</h3>
+    <pre><code>// pkg/lexer/token.go
+const (
+    // ... existing tokens ...
+    IMPORT  // import
+)
+
+var keywords = map[string]TokenType{
+    // ... existing keywords ...
+    "import": IMPORT,
+}</code></pre>
+
+    <h3>Step 2: Add AST Node</h3>
+    <pre><code>// pkg/ast/ast.go
+
+// ImportStatement: import "path/to/file.hl";
+type ImportStatement struct {
+    Token lexer.Token
+    Path  string
+}
+
+func (is *ImportStatement) statementNode()       {}
+func (is *ImportStatement) TokenLiteral() string { return is.Token.Literal }
+func (is *ImportStatement) String() string {
+    return "import \"" + is.Path + "\";"
+}</code></pre>
+
+    <h3>Step 3: Update Parser</h3>
+    <pre><code>// pkg/parser/parser.go
+
+case lexer.IMPORT:
+    return p.parseImportStatement()
+
+func (p *Parser) parseImportStatement() *ast.ImportStatement {
+    stmt := &ast.ImportStatement{Token: p.curToken}
+
+    if !p.expectPeek(lexer.STRING) {
+        return nil
+    }
+
+    stmt.Path = p.curToken.Literal
+
+    if p.peekTokenIs(lexer.SEMICOLON) {
+        p.nextToken()
+    }
+
+    return stmt
+}</code></pre>
+
+    <h3>Step 4: Update Code Generator</h3>
+    <pre><code>// pkg/codegen/codegen.go
+
+// ImportResolver resolves import paths to parsed ASTs
+type ImportResolver func(importPath, basePath string) (*ast.Program, error)
+
+type Generator struct {
+    // ... existing fields ...
+    importedFiles     map[string]bool
+    importResolver    ImportResolver
+    basePath          string
+    importedFunctions []*ast.FunctionStatement
+    importedStructs   []*ast.StructStatement
+    importedEnums     []*ast.EnumStatement
+}
+
+// SetImportResolver configures import resolution
+func (g *Generator) SetImportResolver(resolver ImportResolver, basePath string) {
+    g.importResolver = resolver
+    g.basePath = basePath
+}
+
+// processImport handles a single import
+func (g *Generator) processImport(imp *ast.ImportStatement) {
+    if g.importedFiles[imp.Path] {
+        return // already imported
+    }
+    g.importedFiles[imp.Path] = true
+
+    program, err := g.importResolver(imp.Path, g.basePath)
+    if err != nil {
+        return
+    }
+
+    // Recursively process nested imports
+    g.processImports(program)
+
+    // Collect public declarations
+    for _, stmt := range program.Statements {
+        switch s := stmt.(type) {
+        case *ast.FunctionStatement:
+            if s.Public {
+                g.functions[s.Name.Value] = s
+                g.importedFunctions = append(g.importedFunctions, s)
+            }
+        // ... similar for structs and enums
+        }
+    }
+}</code></pre>
+
+    <h3>Step 5: Update CLI</h3>
+    <pre><code>// cmd/hlc/main.go
+
+// resolveImport reads and parses an imported file
+func resolveImport(importPath, basePath string) (*ast.Program, error) {
+    fullPath := filepath.Join(basePath, importPath)
+
+    source, err := os.ReadFile(fullPath)
+    if err != nil {
+        return nil, err
+    }
+
+    l := lexer.New(string(source))
+    p := parser.New(l)
+    return p.ParseProgram(), nil
+}
+
+// In compile function:
+g.SetImportResolver(resolveImport, filepath.Dir(inputFile))</code></pre>
+
+    <h2>Generated C Code</h2>
+    <p>Imported code is merged into a single C file:</p>
+
+    <div class="compare">
+        <div>
+            <h4>H-lang (two files)</h4>
+            <pre><code># lib/math.hl
+public function abs(x int) int {
+    if x < 0 { return -x; }
+    return x;
+}
+
+# main.hl
+import "lib/math.hl";
+
+function main() {
+    print(abs(-42));
+}</code></pre>
+        </div>
+        <div>
+            <h4>Generated C (one file)</h4>
+            <pre><code>// Forward declarations
+int abs(int x);
+int main(void);
+
+// From lib/math.hl
+int abs(int x) {
+    if ((x < 0)) {
+        return (-x);
+    }
+    return x;
+}
+
+// From main.hl
+int main(void) {
+    printf("%d\n", abs((-42)));
+    return 0;
+}</code></pre>
+        </div>
+    </div>
+
+    <h2>Rules</h2>
+    <ul>
+        <li><strong>Paths are relative</strong> to the importing file</li>
+        <li><strong>Only public declarations</strong> are importable</li>
+        <li><strong>Circular imports</strong> are detected and skipped</li>
+        <li><strong>Duplicate imports</strong> are handled (only processed once)</li>
+        <li><strong>No namespacing</strong> — imported symbols available directly</li>
+    </ul>
+
+    <div class="warning">
+        <strong>Name Collisions:</strong> If two imported files define the same public function name, the second import will overwrite the first. Be careful with naming!
+    </div>
+
+    <h2>Project Structure</h2>
+    <pre><code>my-project/
+├── lib/
+│   ├── math.hl      # public function abs, max, min, ...
+│   ├── strings.hl   # public function concat, split, ...
+│   └── io.hl        # public function readFile, writeFile, ...
+├── src/
+│   ├── main.hl      # import "../lib/math.hl";
+│   └── utils.hl     # import "../lib/strings.hl";
+└── README.md</code></pre>
+
+    <h2>Testing</h2>
+    <pre><code>func TestImportStatement(t *testing.T) {
+    input := `import "math.hl";`
+
+    l := lexer.New(input)
+    p := parser.New(l)
+    program := p.ParseProgram()
+
+    stmt := program.Statements[0].(*ast.ImportStatement)
+
+    if stmt.Path != "math.hl" {
+        t.Errorf("path: expected 'math.hl', got %q", stmt.Path)
+    }
+}</code></pre>
+
+    <h2>Summary</h2>
+    <ul>
+        <li><code>import "path.hl";</code> — Import a file</li>
+        <li><code>public function</code> — Make function importable</li>
+        <li><code>public struct</code> — Make struct importable</li>
+        <li><code>public enum</code> — Make enum importable</li>
+        <li>Paths are relative to the importing file</li>
+        <li>All imported code is merged into one C file</li>
+    </ul>
+
+    <nav>
+        <a href="12-maps.html">&larr; Previous: Maps</a>
+        <a href="index.html">Back to Index</a>
+    </nav>
+</body>
+</html>
