@@ -1,0 +1,13 @@
+# Import Example
+# Demonstrates importing from other files
+
+import "../lib/math.hl";
+
+function main() {
+    # Using functions from math.hl
+    print(abs(-42));        # 42
+    print(max(10, 20));     # 20
+    print(min(10, 20));     # 10
+    print(power(2, 8));       # 256
+    print(factorial(5));    # 120
+}

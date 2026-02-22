@@ -1,0 +1,38 @@
+# Math library
+# Provides basic math functions
+
+public function abs(x int) int {
+    if x < 0 {
+        return -x;
+    }
+    return x;
+}
+
+public function max(a int, b int) int {
+    if a > b {
+        return a;
+    }
+    return b;
+}
+
+public function min(a int, b int) int {
+    if a < b {
+        return a;
+    }
+    return b;
+}
+
+public function power(base int, exp int) int {
+    result := 1;
+    for i := 0; i < exp; i++ {
+        result = result * base;
+    }
+    return result;
+}
+
+public function factorial(n int) int {
+    if n <= 1 {
+        return 1;
+    }
+    return n * factorial(n - 1);
+}
