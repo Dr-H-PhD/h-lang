@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Dr-H-PhD/h-lang/pkg/ast"
 	"github.com/Dr-H-PhD/h-lang/pkg/codegen"
 	"github.com/Dr-H-PhD/h-lang/pkg/lexer"
 	"github.com/Dr-H-PhD/h-lang/pkg/parser"
@@ -50,7 +51,7 @@ func main() {
 	}
 
 	// Compile
-	cCode, errors := compile(string(source))
+	cCode, errors := compile(string(source), inputFile)
 	if len(errors) > 0 {
 		fmt.Fprintf(os.Stderr, "Compilation errors:\n")
 		for _, e := range errors {
@@ -126,7 +127,7 @@ func main() {
 	}
 }
 
-func compile(source string) (string, []string) {
+func compile(source string, inputFile string) (string, []string) {
 	// Lexer
 	l := lexer.New(source)
 
@@ -140,9 +141,40 @@ func compile(source string) (string, []string) {
 
 	// Code generation
 	g := codegen.New()
+
+	// Set up import resolver
+	basePath := filepath.Dir(inputFile)
+	if basePath == "" {
+		basePath = "."
+	}
+	g.SetImportResolver(resolveImport, basePath)
+
 	cCode := g.Generate(program)
 
 	return cCode, nil
+}
+
+// resolveImport reads and parses an imported file
+func resolveImport(importPath, basePath string) (*ast.Program, error) {
+	// Resolve the full path
+	fullPath := filepath.Join(basePath, importPath)
+
+	// Read the file
+	source, err := os.ReadFile(fullPath)
+	if err != nil {
+		return nil, fmt.Errorf("cannot import %q: %v", importPath, err)
+	}
+
+	// Parse the file
+	l := lexer.New(string(source))
+	p := parser.New(l)
+	program := p.ParseProgram()
+
+	if len(p.Errors()) > 0 {
+		return nil, fmt.Errorf("errors in imported file %q: %v", importPath, p.Errors())
+	}
+
+	return program, nil
 }
 
 func findCompiler() string {
