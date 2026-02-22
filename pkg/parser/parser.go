@@ -208,6 +208,8 @@ func (p *Parser) parseStatement() ast.Statement {
 	}
 
 	switch p.curToken.Type {
+	case lexer.IMPORT:
+		return p.parseImportStatement()
 	case lexer.PUBLIC:
 		return p.parsePublicStatement()
 	case lexer.FUNCTION:
@@ -246,6 +248,22 @@ func (p *Parser) parseStatement() ast.Statement {
 	default:
 		return p.parseExpressionStatement()
 	}
+}
+
+func (p *Parser) parseImportStatement() *ast.ImportStatement {
+	stmt := &ast.ImportStatement{Token: p.curToken}
+
+	if !p.expectPeek(lexer.STRING) {
+		return nil
+	}
+
+	stmt.Path = p.curToken.Literal
+
+	if p.peekTokenIs(lexer.SEMICOLON) {
+		p.nextToken()
+	}
+
+	return stmt
 }
 
 func (p *Parser) parsePublicStatement() ast.Statement {

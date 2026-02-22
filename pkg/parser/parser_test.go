@@ -1000,6 +1000,56 @@ func TestMapTypeAnnotation(t *testing.T) {
 	}
 }
 
+func TestImportStatement(t *testing.T) {
+	input := `import "math.hl";`
+
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+
+	stmt, ok := program.Statements[0].(*ast.ImportStatement)
+	if !ok {
+		t.Fatalf("expected ImportStatement, got %T", program.Statements[0])
+	}
+
+	if stmt.Path != "math.hl" {
+		t.Errorf("path: expected 'math.hl', got %q", stmt.Path)
+	}
+}
+
+func TestMultipleImports(t *testing.T) {
+	input := `import "math.hl";
+import "utils.hl";
+
+function main() {
+    print(1);
+}`
+
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	if len(program.Statements) != 3 {
+		t.Fatalf("expected 3 statements, got %d", len(program.Statements))
+	}
+
+	imp1 := program.Statements[0].(*ast.ImportStatement)
+	if imp1.Path != "math.hl" {
+		t.Errorf("import 1: expected 'math.hl', got %q", imp1.Path)
+	}
+
+	imp2 := program.Statements[1].(*ast.ImportStatement)
+	if imp2.Path != "utils.hl" {
+		t.Errorf("import 2: expected 'utils.hl', got %q", imp2.Path)
+	}
+}
+
 func checkParserErrors(t *testing.T, p *Parser) {
 	errors := p.Errors()
 	if len(errors) == 0 {
