@@ -85,7 +85,7 @@ func TestNextToken_TwoCharOperators(t *testing.T) {
 }
 
 func TestNextToken_Keywords(t *testing.T) {
-	input := `function struct enum if else for while return const var public null true false alloc free defer len make range break continue int float string char bool void`
+	input := `function struct enum import if else for while return const var public null true false alloc free defer len make range break continue int float string char bool void`
 
 	tests := []struct {
 		expectedType    TokenType
@@ -94,6 +94,7 @@ func TestNextToken_Keywords(t *testing.T) {
 		{FUNCTION, "function"},
 		{STRUCT, "struct"},
 		{ENUM, "enum"},
+		{IMPORT, "import"},
 		{IF, "if"},
 		{ELSE, "else"},
 		{FOR, "for"},

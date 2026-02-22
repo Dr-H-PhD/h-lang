@@ -45,6 +45,18 @@ func (p *Program) String() string {
 	return out.String()
 }
 
+// ImportStatement: import "path/to/file.hl";
+type ImportStatement struct {
+	Token lexer.Token
+	Path  string // the import path (e.g., "math.hl")
+}
+
+func (is *ImportStatement) statementNode()       {}
+func (is *ImportStatement) TokenLiteral() string { return is.Token.Literal }
+func (is *ImportStatement) String() string {
+	return "import \"" + is.Path + "\";"
+}
+
 // Identifier represents a variable name
 type Identifier struct {
 	Token lexer.Token

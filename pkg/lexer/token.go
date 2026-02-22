@@ -65,6 +65,7 @@ const (
 	FUNCTION
 	STRUCT
 	ENUM
+	IMPORT
 	IF
 	ELSE
 	FOR
@@ -142,6 +143,7 @@ var tokenNames = map[TokenType]string{
 	FUNCTION:     "function",
 	STRUCT:       "struct",
 	ENUM:         "enum",
+	IMPORT:       "import",
 	IF:           "if",
 	ELSE:         "else",
 	FOR:          "for",
@@ -182,6 +184,7 @@ var keywords = map[string]TokenType{
 	"function": FUNCTION,
 	"struct":   STRUCT,
 	"enum":     ENUM,
+	"import":   IMPORT,
 	"if":       IF,
 	"else":     ELSE,
 	"for":      FOR,
