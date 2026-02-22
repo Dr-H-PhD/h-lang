@@ -144,6 +144,14 @@ public function min(a int, b int) int {
     return b;
 }
 
+public function power(base int, exp int) int {
+    result := 1;
+    for i := 0; i < exp; i++ {
+        result = result * base;
+    }
+    return result;
+}
+
 public function factorial(n int) int {
     if n <= 1 {
         return 1;
@@ -158,6 +166,7 @@ function main() {
     print(abs(-42));       # 42
     print(max(10, 20));    # 20
     print(min(10, 20));    # 10
+    print(power(2, 8));    # 256
     print(factorial(5));   # 120
 }</code></pre>
 
